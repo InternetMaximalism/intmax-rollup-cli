@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use intmax_rollup_interface::{
     constants::*,
@@ -35,15 +38,70 @@ type F = <C as GenericConfig<D>>::F;
 
 const CONTENT_TYPE: &str = "Content-Type";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Config {
-    aggregator_url: String,
+    aggregator_url: Arc<Mutex<String>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializableConfig {
+    pub aggregator_url: String,
+}
+
+impl serde::Serialize for Config {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let aggregator_url: String = self.aggregator_url.lock().unwrap().clone();
+        let raw = SerializableConfig { aggregator_url };
+
+        raw.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = SerializableConfig::deserialize(deserializer)?;
+
+        let result = Config {
+            aggregator_url: Arc::new(Mutex::new(raw.aggregator_url)),
+        };
+
+        Ok(result)
+    }
 }
 
 impl Config {
     pub fn new(aggregator_url: &str) -> Self {
         Self {
-            aggregator_url: aggregator_url.to_string(),
+            aggregator_url: Arc::new(Mutex::new(aggregator_url.to_string())),
+        }
+    }
+
+    pub fn aggregator_api_url(&self, api_path: &str) -> String {
+        let mut base_url: String = self.aggregator_url.lock().unwrap().clone();
+
+        if base_url.ends_with('/') {
+            base_url.pop();
+        }
+
+        base_url + api_path
+    }
+
+    pub fn set_aggregator_url(&self, aggregator_url: Option<String>) {
+        if let Some(aggregator_url) = aggregator_url {
+            let new_url = aggregator_url;
+            let _ = std::mem::replace::<String>(
+                &mut self.aggregator_url.lock().unwrap(),
+                new_url.clone(),
+            );
+            println!("The new aggregator URL is {}", new_url);
+        } else {
+            println!("The aggregator URL is {}", self.aggregator_api_url(""));
         }
     }
 
@@ -52,7 +110,7 @@ impl Config {
         let payload = RequestDepositAddBody { deposit_info };
         let body = serde_json::to_string(&payload).expect("fail to encode");
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/test/deposit/add")
+            .post(self.aggregator_api_url("/test/deposit/add"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
@@ -126,7 +184,7 @@ impl Config {
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/tx/send")
+            .post(self.aggregator_api_url("/tx/send"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
@@ -199,7 +257,7 @@ impl Config {
 
     pub fn check_health(&self) {
         let resp = reqwest::blocking::Client::new()
-            .get(self.aggregator_url.clone())
+            .get(self.aggregator_api_url(""))
             .send()
             .expect("fail to fetch");
         if resp.status() != 200 {
@@ -215,7 +273,7 @@ impl Config {
 
     pub fn reset_server_state(&self) {
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/test/reset")
+            .post(self.aggregator_api_url("/test/reset"))
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
@@ -237,7 +295,7 @@ impl Config {
         let body = r#"{}"#;
 
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/block/propose")
+            .post(self.aggregator_api_url("/block/propose"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
@@ -257,7 +315,7 @@ impl Config {
         let body = r#"{}"#;
 
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/block/approve")
+            .post(self.aggregator_api_url("/block/approve"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
@@ -295,7 +353,7 @@ impl Config {
         }
 
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_url.clone() + "/block")
+            .get(self.aggregator_api_url("/block"))
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
@@ -320,7 +378,7 @@ impl Config {
         let query = vec![("user_address", format!("0x{}", user_address))];
 
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_url.clone() + "/account/latest-block")
+            .get(self.aggregator_api_url("/account/latest-block"))
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
@@ -366,7 +424,7 @@ impl Config {
         ];
 
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_url.clone() + "/tx/witness")
+            .get(self.aggregator_api_url("/tx/witness"))
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
@@ -394,7 +452,7 @@ impl Config {
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_url.clone() + "/signed-diff/send")
+            .post(self.aggregator_api_url("/signed-diff/send"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()

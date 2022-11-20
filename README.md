@@ -9,6 +9,7 @@ rustup override set nightly
 cargo --version # >= 1.65.0-nightly
 cargo build --release
 alias intmax='./target/release/intmax-client'
+intmax config aggregator-url http://dev.cli.intmax.io
 ```
 
 ## How to use

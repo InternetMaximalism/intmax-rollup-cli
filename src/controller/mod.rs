@@ -40,6 +40,12 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum SubCommand {
+    /// Config
+    #[structopt(name = "config")]
+    Config {
+        #[structopt(subcommand)]
+        config_command: ConfigCommand,
+    },
     /// Account
     #[structopt(name = "account")]
     Account {
@@ -76,6 +82,12 @@ enum SubCommand {
         #[structopt(subcommand)]
         block_command: BlockCommand,
     },
+}
+
+#[derive(Debug, StructOpt)]
+enum ConfigCommand {
+    #[structopt(name = "aggregator-url")]
+    AggregatorUrl { aggregator_url: Option<String> },
 }
 
 #[derive(Debug, StructOpt)]
@@ -194,6 +206,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
     };
 
     match sub_command {
+        SubCommand::Config { config_command } => match config_command {
+            ConfigCommand::AggregatorUrl { aggregator_url } => {
+                service.set_aggregator_url(aggregator_url);
+            }
+        },
         SubCommand::Account { account_command } => {
             match account_command {
                 AccountCommand::Reset {} => {}
@@ -452,6 +469,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
     let encoded_wallet = serde_json::to_string(&wallet).unwrap();
     let mut file = File::create(wallet_file_path)?;
     write!(file, "{}", encoded_wallet)?;
+    file.flush()?;
+
+    let encoded_service = serde_json::to_string(&service).unwrap();
+    let mut file = File::create(config_file_path)?;
+    write!(file, "{}", encoded_service)?;
     file.flush()?;
 
     Ok(())
