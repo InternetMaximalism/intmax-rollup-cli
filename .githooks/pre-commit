@@ -1,0 +1,13 @@
+#!/bin/zsh
+
+set -e;
+
+ADD_FILES=$(rustfmt --check --edition 2021 -- ./**/*.rs | grep "Diff in " | awk '{print $3}' | tr '\n' ' ')
+rustfmt --edition 2021 -- ./**/*.rs
+
+ADD_FILES_ARRAY=(`echo $ADD_FILES`)
+
+for i in `seq 1 ${#ADD_FILES_ARRAY[@]}`
+do
+ git add ${ADD_FILES_ARRAY[$i-1]}
+done

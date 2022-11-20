@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "jscearcy.rust-doc-viewer",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}
