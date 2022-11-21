@@ -404,7 +404,7 @@ impl Config {
             .targets
             .set_witness(&mut pw, sender_account.private_key, message);
 
-        println!("start proving: sender1_received_signature");
+        println!("start proving: received_signature");
         let start = Instant::now();
         let received_signature = simple_signature_circuit.prove(pw).unwrap();
         let end = start.elapsed();
@@ -443,7 +443,6 @@ impl Config {
         received_signature: SimpleSignatureProofWithPublicInputs<F, C, D>,
         tx_hash: WrappedHashOut<F>,
     ) {
-        println!("send_received_signature");
         let payload = RequestSignedDiffSendBody {
             tx_hash,
             received_signature,
@@ -461,9 +460,9 @@ impl Config {
             .expect("fail to parse JSON");
 
         if resp.ok {
-            println!("reset server state successfully");
+            println!("send received signature successfully");
         } else {
-            panic!("fail to reset server state");
+            panic!("fail to send received signature");
         }
     }
 }

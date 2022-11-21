@@ -15,7 +15,6 @@ intmax config aggregator-url http://dev.cli.intmax.io
 ## How to use
 
 ```sh
-intmax block reset
 intmax account reset
 intmax account add --default
 intmax account add --private-key 0x01 # address: 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
