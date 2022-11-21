@@ -9,6 +9,7 @@ use intmax_zkp_core::{
     sparse_merkle_tree::goldilocks_poseidon::{
         GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
     },
+    transaction::asset::{Asset, TokenKind},
     zkdsa::account::{Account, Address},
 };
 use plonky2::{
@@ -20,10 +21,7 @@ use structopt::StructOpt;
 
 use crate::{
     service::*,
-    utils::key_management::{
-        memory::WalletOnMemory,
-        types::{Asset, TokenKind, Wallet},
-    },
+    utils::key_management::{memory::WalletOnMemory, types::Wallet},
 };
 
 const D: usize = 2;
@@ -312,11 +310,28 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let old_user_asset_root = user_state.asset_tree.get_root();
                 // dbg!(old_user_asset_root.to_string());
 
-                let (blocks, latest_block_number) =
-                    service.get_blocks(user_address, Some(user_state.last_seen_block_number), None);
+                let (blocks, latest_block_number_deposit) = service.get_blocks(
+                    user_address,
+                    Some(user_state.last_seen_block_number_deposit),
+                    None,
+                );
                 // dbg!(&blocks.len());
 
-                let merge_witnesses = service.merge_deposits(blocks, user_address, user_state);
+                let merge_witnesses_deposit =
+                    service.merge_deposits(blocks, user_address, user_state);
+                let (merge_witnesses_received, latest_block_number_merge) = service
+                    .get_merge_transaction_witness(
+                        user_address,
+                        user_state.last_seen_block_number_merge,
+                    );
+                let mut merge_witnesses_received = service.merge_received_asset(
+                    merge_witnesses_received,
+                    user_address,
+                    user_state,
+                );
+                let mut merge_witnesses = merge_witnesses_deposit;
+                merge_witnesses.append(&mut merge_witnesses_received);
+
                 let _new_user_asset_root = user_state.asset_tree.get_root();
                 // dbg!(new_user_asset_root.to_string());
 
@@ -329,7 +344,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 );
 
                 user_state.insert_pending_transactions(&[transaction]);
-                user_state.last_seen_block_number = latest_block_number;
+                user_state.last_seen_block_number_deposit = latest_block_number_deposit;
+                user_state.last_seen_block_number_merge = latest_block_number_merge;
             }
             TransactionCommand::Send {
                 user_address,
@@ -357,11 +373,28 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let old_user_asset_root = user_state.asset_tree.get_root();
                 // dbg!(&old_user_asset_root);
 
-                let (blocks, latest_block_number) =
-                    service.get_blocks(user_address, Some(user_state.last_seen_block_number), None);
+                let (blocks, latest_block_number_deposit) = service.get_blocks(
+                    user_address,
+                    Some(user_state.last_seen_block_number_deposit),
+                    None,
+                );
                 // dbg!(&blocks.len());
 
-                let merge_witnesses = service.merge_deposits(blocks, user_address, user_state);
+                let merge_witnesses_deposit =
+                    service.merge_deposits(blocks, user_address, user_state);
+                let (merge_witnesses_received, latest_block_number_merge) = service
+                    .get_merge_transaction_witness(
+                        user_address,
+                        user_state.last_seen_block_number_merge,
+                    );
+                let mut merge_witnesses_received = service.merge_received_asset(
+                    merge_witnesses_received,
+                    user_address,
+                    user_state,
+                );
+                let mut merge_witnesses = merge_witnesses_deposit;
+                merge_witnesses.append(&mut merge_witnesses_received);
+
                 let _new_user_asset_root = user_state.asset_tree.get_root();
                 // dbg!(&new_user_asset_root);
 
@@ -431,7 +464,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 user_state.insert_pending_transactions(&[transaction]);
                 user_state.assets.remove(output_asset.kind);
-                user_state.last_seen_block_number = latest_block_number;
+                user_state.last_seen_block_number_deposit = latest_block_number_deposit;
+                user_state.last_seen_block_number_merge = latest_block_number_merge;
             }
         },
         SubCommand::Block { block_command } => match block_command {

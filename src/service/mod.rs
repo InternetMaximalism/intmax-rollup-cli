@@ -3,34 +3,36 @@ use std::{
     time::Instant,
 };
 
-use intmax_rollup_interface::{
-    constants::*,
-    interface::*,
-    utils::{make_deposit_proof, BlockInfo},
+use intmax_rollup_interface::{constants::*, interface::*};
+use intmax_zkp_core::{
+    rollup::{
+        block::BlockInfo,
+        circuits::merge_and_purge::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
+        deposit::make_deposit_proof,
+        gadgets::deposit_block::DepositInfo,
+    },
+    sparse_merkle_tree::{
+        gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
+        goldilocks_poseidon::{NodeDataMemory, WrappedHashOut},
+    },
+    transaction::{
+        asset::{ReceivedAssetProof, TokenKind},
+        gadgets::merge::MergeProof,
+    },
+    zkdsa::{
+        account::{Account, Address},
+        circuits::{make_simple_signature_circuit, SimpleSignatureProofWithPublicInputs},
+    },
 };
-use intmax_zkp_core::{rollup, sparse_merkle_tree, transaction, zkdsa};
 use plonky2::{
-    field::types::PrimeField64,
+    field::types::{Field, PrimeField64},
     hash::hash_types::HashOut,
     iop::witness::PartialWitness,
     plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
 };
-use rollup::{
-    circuits::merge_and_purge::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
-    gadgets::deposit_block::DepositInfo,
-};
 use serde::{Deserialize, Serialize};
-use sparse_merkle_tree::{
-    gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
-    goldilocks_poseidon::{NodeDataMemory, WrappedHashOut},
-};
-use transaction::gadgets::merge::MergeProof;
-use zkdsa::{
-    account::{Account, Address},
-    circuits::{make_simple_signature_circuit, SimpleSignatureProofWithPublicInputs},
-};
 
-use crate::utils::key_management::{memory::UserState, types::TokenKind};
+use crate::utils::key_management::memory::UserState;
 
 const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
@@ -255,6 +257,63 @@ impl Config {
         merge_witnesses
     }
 
+    pub fn merge_received_asset(
+        &self,
+        received_asset_witness: Vec<ReceivedAssetProof<F>>,
+        _user_address: Address<F>,
+        user_state: &mut UserState<NodeDataMemory>,
+    ) -> Vec<MergeProof<F>> {
+        let mut merge_witnesses = vec![];
+        for witness in received_asset_witness {
+            // let (index, found_deposit_info) = block
+            //     .deposit_list
+            //     .iter()
+            //     .enumerate()
+            //     .find(|(_, leaf)| leaf.receiver_address == user_address)
+            //     .expect("your deposit info was not found");
+            // let (_deposit_root, deposit_proof) =
+            //     make_deposit_proof(&block.deposit_list, Some(index));
+            // let (deposit_proof1, deposit_proof2) = deposit_proof.unwrap();
+
+            // let pseudo_tx_hash = HashOut::ZERO;
+            let tx_hash = witness.diff_tree_inclusion_proof.1.key;
+            let contract_address = witness.asset.kind.contract_address;
+            let variable_index = witness.asset.kind.variable_index;
+            let amount = witness.asset.amount;
+            let merge_process_proof = user_state
+                .asset_tree
+                .set(
+                    tx_hash,
+                    contract_address.0.into(),
+                    variable_index,
+                    HashOut::from_partial(&[F::from_canonical_u64(amount)]).into(),
+                )
+                .unwrap();
+
+            user_state.assets.add(
+                TokenKind {
+                    contract_address: Address(contract_address.0),
+                    variable_index,
+                },
+                amount,
+                tx_hash,
+            );
+
+            // let (account_tree_inclusion_proof, _) =
+            //     self.get_latest_account_tree_proof(user_address);
+
+            let merge_proof = MergeProof {
+                is_deposit: witness.is_deposit,
+                diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
+                merge_process_proof: merge_process_proof.0,
+                account_tree_inclusion_proof: witness.account_tree_inclusion_proof,
+            };
+            merge_witnesses.push(merge_proof);
+        }
+
+        merge_witnesses
+    }
+
     pub fn check_health(&self) {
         let resp = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url(""))
@@ -464,5 +523,30 @@ impl Config {
         } else {
             panic!("fail to send received signature");
         }
+    }
+
+    pub fn get_merge_transaction_witness(
+        &self,
+        user_address: Address<F>,
+        last_seen_block_number: u32,
+    ) -> (Vec<ReceivedAssetProof<F>>, u32) {
+        let query = vec![
+            ("user_address", format!("0x{}", user_address)),
+            ("since", format!("{}", last_seen_block_number)),
+        ];
+
+        let request = reqwest::blocking::Client::new()
+            .get(self.aggregator_api_url("/tx/received"))
+            .query(&query);
+        let resp = request.send().expect("fail to fetch");
+        if resp.status() != 200 {
+            panic!("{:?}", &resp);
+        }
+
+        let resp = resp
+            .json::<ResponseTxReceivedQuery>()
+            .expect("fail to parse JSON");
+
+        (resp.proofs, resp.latest_block_number)
     }
 }

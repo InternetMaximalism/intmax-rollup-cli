@@ -1,38 +1,11 @@
 use std::collections::HashSet;
 
-use intmax_zkp_core::{rollup, sparse_merkle_tree, zkdsa};
+use intmax_zkp_core::{rollup, sparse_merkle_tree, transaction::asset::TokenKind, zkdsa};
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
 use rollup::circuits::merge_and_purge::MergeAndPurgeTransitionPublicInputs;
 use serde::{Deserialize, Serialize};
 use sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut};
 use zkdsa::account::Address;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TokenKind<F: RichField> {
-    #[serde(bound(deserialize = "Address<F>: Deserialize<'de>"))]
-    pub contract_address: Address<F>,
-    #[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
-    pub variable_index: WrappedHashOut<F>,
-}
-
-#[test]
-fn test_serde_token_kind() {
-    use plonky2::{field::types::Sample, hash::hash_types::HashOut};
-
-    let kind: TokenKind<GoldilocksField> = TokenKind {
-        contract_address: Address::rand(),
-        variable_index: HashOut::rand().into(),
-    };
-    let encoded_kind = serde_json::to_string(&kind).unwrap();
-    let decoded_kind: TokenKind<GoldilocksField> = serde_json::from_str(&encoded_kind).unwrap();
-    assert_eq!(decoded_kind, kind);
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Asset<F: RichField> {
-    pub kind: TokenKind<F>,
-    pub amount: u64,
-}
 
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]

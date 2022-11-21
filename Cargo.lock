@@ -158,15 +158,15 @@ checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
 name = "bytes"
-version = "1.2.1"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec8a7b6a70fde80372154c65702f00a0f56f3e1c36abbc6c440484be248856db"
+checksum = "dfb24e866b15a1af2a1b663f10c6b6b8f397a84aadb828f12e5b289ec23a3a3c"
 
 [[package]]
 name = "cc"
-version = "1.0.76"
+version = "1.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76a284da2e6fe2092f2353e51713435363112dfd60030e22add80be333fb928f"
+checksum = "e9f73505338f7d905b19d18738976aae232eb46b8efc15554ffc56deb5d9ebe4"
 
 [[package]]
 name = "cfg-if"
@@ -686,7 +686,7 @@ version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f9f29bc9dda355256b2916cf526ab02ce0aeaaaf2bad60d65ef3f12f11dd0f4"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -743,7 +743,7 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75f43d41e26995c17e71ee126451dd3941010b0514a81a9d11f3b341debc2399"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "fnv",
  "itoa 1.0.4",
 ]
@@ -764,7 +764,7 @@ version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5f38f16d184e36f2408a55281cd658ecbd3ca05cce6d6510a176eca393e26d1"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "http",
  "pin-project-lite 0.2.9",
 ]
@@ -817,7 +817,7 @@ version = "0.14.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "034711faac9d2166cb1baf1a2fb0b60b1f277f8492fd72176c17f3515e1abd3c"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -872,7 +872,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "hyper 0.14.23",
  "native-tls",
  "tokio 1.22.0",
@@ -979,7 +979,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface#4d4ad451b8844151deb0dc76013d1f26a0ab9faa"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface#3f64d39ccf2047a980f0a9cbd1cc84b93345165e"
 dependencies = [
  "hex",
  "intmax-zkp-core",
@@ -992,7 +992,7 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core#101e7f5fae28ee351d5866067248bb0dcd9ba992"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core#57507f07364500227678e4e790a777a38f167864"
 dependencies = [
  "anyhow",
  "hex",
@@ -1145,7 +1145,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "maybe_rayon"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "rayon",
 ]
@@ -1516,7 +1516,7 @@ checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 [[package]]
 name = "plonky2"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1538,7 +1538,7 @@ dependencies = [
 [[package]]
 name = "plonky2_ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1552,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "plonky2_field"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1567,7 +1567,7 @@ dependencies = [
 [[package]]
 name = "plonky2_u32"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1578,7 +1578,7 @@ dependencies = [
 [[package]]
 name = "plonky2_util"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#c31b0147f4b0154b376b151f83eaa371a1ea3007"
+source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
 dependencies = [
  "rand 0.8.5",
 ]
@@ -1796,7 +1796,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68cc60575865c7831548863cc02356512e3f1dc2f3f82cb837d7fc4cc8f3c97c"
 dependencies = [
  "base64 0.13.1",
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "encoding_rs",
  "futures-core",
  "futures-util",
@@ -1832,7 +1832,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb919243f34364b6bd2fc10ef797edbfa75f33c252e7998527479c6d6b47e1ec"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "rustc-hex",
 ]
 
@@ -2239,7 +2239,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d76ce4a75fb488c605c54bf610f221cea8b0dafb53333c1a67e8ee199dcd2ae3"
 dependencies = [
  "autocfg",
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "libc",
  "memchr",
  "mio 0.8.5",
@@ -2300,7 +2300,7 @@ version = "0.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36943ee01a6d67977dd3f84a5a1d2efeb4ada3a1ae771cadfaa535d9d9fc6507"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "futures-core",
  "futures-io",
  "futures-sink",
@@ -2315,7 +2315,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bb2e075f03b3d66d8d8785356224ba688d2906a371015e225beeb65ca92c740"
 dependencies = [
- "bytes 1.2.1",
+ "bytes 1.3.0",
  "futures-core",
  "futures-sink",
  "pin-project-lite 0.2.9",
