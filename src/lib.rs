@@ -8,28 +8,29 @@ mod tests {
     type C = PoseidonGoldilocksConfig;
     // type H = <C as GenericConfig<D>>::InnerHasher;
     type F = <C as GenericConfig<D>>::F;
-    // type K = Wrapper<HashOut<F>>;
-    // type V = Wrapper<HashOut<F>>;
-    // type I = Wrapper<HashOut<F>>;
 
     use std::sync::{Arc, Mutex};
 
-    use intmax_zkp_core::{rollup, sparse_merkle_tree, transaction, zkdsa};
+    use intmax_rollup_interface::constants::N_LOG_TXS;
+    use intmax_zkp_core::{
+        merkle_tree::tree::get_merkle_proof,
+        rollup::gadgets::deposit_block::DepositInfo,
+        sparse_merkle_tree::{
+            goldilocks_poseidon::{
+                GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
+                LayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+                WrappedHashOut,
+            },
+            proof::SparseMerkleInclusionProof,
+        },
+        transaction::{block_header::get_block_hash, gadgets::merge::MergeProof},
+        zkdsa::account::{Account, Address},
+    };
     use plonky2::{
         field::types::Field,
-        hash::hash_types::HashOut,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        hash::{hash_types::HashOut, poseidon::PoseidonHash},
+        plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
     };
-    use rollup::gadgets::deposit_block::DepositInfo;
-    use sparse_merkle_tree::{
-        goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            PoseidonSparseMerkleTree, WrappedHashOut,
-        },
-        proof::SparseMerkleInclusionProof,
-    };
-    use transaction::{block_header::get_block_hash, gadgets::merge::MergeProof};
-    use zkdsa::account::{Account, Address};
 
     use crate::{
         service::Config,
@@ -42,57 +43,79 @@ mod tests {
 
         let password = "password";
 
+        service.reset_server_state();
+
         let mut wallet = WalletOnMemory::new(password.to_string());
 
         let sender1_account = Account::<F>::rand();
+
+        let sender2_account = Account::<F>::rand();
 
         wallet.add_account(sender1_account);
 
         // dbg!(&purge_proof_circuit_data.common);
 
-        let mut sender1_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-            LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
+        let sender1_nodes_db: Arc<Mutex<NodeDataMemory>> = Default::default();
 
-        let mut sender1_tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-            LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
-
-        let sender1_deposit_list = vec![
+        let deposit_list = vec![
             DepositInfo {
                 receiver_address: sender1_account.address,
-                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-                variable_index: *GoldilocksHashOut::from_u128(8012),
-                amount: F::from_canonical_u64(2053),
+                contract_address: Address(*GoldilocksHashOut::from_u128(1)),
+                variable_index: *GoldilocksHashOut::from_u128(0),
+                amount: F::from_canonical_u64(10),
             },
-            DepositInfo {
-                receiver_address: sender1_account.address,
-                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-                variable_index: *GoldilocksHashOut::from_u128(8012),
-                amount: F::from_canonical_u64(1111),
-            },
+            // DepositInfo {
+            //     receiver_address: sender1_account.address,
+            //     contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            //     variable_index: *GoldilocksHashOut::from_u128(8012),
+            //     amount: F::from_canonical_u64(1111),
+            // },
         ];
 
         // deposit のみの block を作成.
-        service.deposit_assets(sender1_deposit_list.clone());
+        service.deposit_assets(deposit_list.clone());
         service.trigger_propose_block();
         let deposit_block = service.trigger_approve_block();
 
-        let node_data = Arc::new(Mutex::new(NodeDataMemory::default()));
-        let mut deposit_sender1_tree =
-            LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
+        let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+            sender1_nodes_db.clone(),
+            Default::default(),
+        );
 
-        for deposit_info in sender1_deposit_list.clone() {
+        for deposit_info in deposit_list.clone() {
             deposit_sender1_tree
                 .set(
-                    sender1_account.address.0.into(),
-                    deposit_info.contract_address.0.into(),
+                    deposit_info.receiver_address.to_hash_out().into(),
+                    deposit_info.contract_address.to_hash_out().into(),
                     deposit_info.variable_index.into(),
                     HashOut::from_partial(&[deposit_info.amount]).into(),
                 )
                 .unwrap();
+        }
 
-            sender1_user_asset_tree
+        let deposit_diff_root =
+            PoseidonHash::two_to_one(*deposit_sender1_tree.get_root(), HashOut::ZERO);
+
+        let deposit_sender1_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
+            deposit_sender1_tree.into();
+
+        let merge_inclusion_proof2 = deposit_sender1_tree
+            .find(&sender1_account.address.to_hash_out().into())
+            .unwrap();
+
+        // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
+        let merge_inclusion_proof1 =
+            get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
+
+        let deposit_nonce = WrappedHashOut::ZERO;
+        let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
+
+        let mut sender1_inner_user_asset_tree: LayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+            LayeredPoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), Default::default());
+
+        for deposit_info in deposit_list.clone() {
+            sender1_inner_user_asset_tree
                 .set(
-                    get_block_hash(&deposit_block.header).into(),
                     deposit_info.contract_address.0.into(),
                     deposit_info.variable_index.into(),
                     HashOut::from_partial(&[deposit_info.amount]).into(),
@@ -100,36 +123,77 @@ mod tests {
                 .unwrap();
         }
 
-        let zero = GoldilocksHashOut::from_u128(0);
-        let proof1 = sender1_user_asset_tree
+        let mut sender1_user_asset_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
+            PoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), Default::default());
+
+        let block_hash = get_block_hash(&deposit_block.header);
+        let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, block_hash);
+        let merge_process_proof = sender1_user_asset_tree
             .set(
-                get_block_hash(&deposit_block.header).into(),
-                sender1_deposit_list[0].contract_address.0.into(),
-                sender1_deposit_list[0].variable_index.into(),
-                zero,
-            )
-            .unwrap();
-        let proof2 = sender1_user_asset_tree
-            .set(
-                get_block_hash(&deposit_block.header).into(),
-                sender1_deposit_list[1].contract_address.0.into(),
-                sender1_deposit_list[1].variable_index.into(),
-                zero,
+                deposit_tx_hash.into(),
+                sender1_inner_user_asset_tree.get_root(),
             )
             .unwrap();
 
+        let diff_tree_inclusion_proof = (
+            deposit_block.header,
+            merge_inclusion_proof1,
+            merge_inclusion_proof2,
+        );
+        let merge_witnesses = vec![MergeProof {
+            is_deposit: true,
+            diff_tree_inclusion_proof,
+            merge_process_proof,
+            latest_account_tree_inclusion_proof: default_inclusion_proof,
+            nonce: deposit_nonce,
+        }];
+
+        for merge_witness in merge_witnesses.iter() {
+            let block_header = &merge_witness.diff_tree_inclusion_proof.0;
+            let root = if merge_witness.is_deposit {
+                block_header.deposit_digest
+            } else {
+                block_header.transactions_digest
+            };
+            assert_eq!(root, *merge_witness.diff_tree_inclusion_proof.1.root);
+        }
+
+        let mut sender1_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+            sender1_user_asset_tree.into();
+
+        let zero = WrappedHashOut::ZERO;
+        let proof1 = sender1_user_asset_tree
+            .set(
+                deposit_tx_hash.into(),
+                deposit_list[0].contract_address.0.into(),
+                deposit_list[0].variable_index.into(),
+                zero,
+            )
+            .unwrap();
+        // let proof2 = sender1_user_asset_tree
+        //     .set(
+        //         deposit_tx_hash.into(),
+        //         sender1_deposit_list[1].contract_address.0.into(),
+        //         sender1_deposit_list[1].variable_index.into(),
+        //         zero,
+        //     )
+        //     .unwrap();
+
+        let mut sender1_tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+            LayeredLayeredPoseidonSparseMerkleTree::new(sender1_nodes_db, Default::default());
+
         let key3 = (
-            GoldilocksHashOut::from_u128(407),
-            GoldilocksHashOut::from_u128(305),
-            GoldilocksHashOut::from_u128(8012),
+            sender2_account.address.to_hash_out().into(),
+            deposit_list[0].contract_address.0.into(),
+            deposit_list[0].variable_index.into(),
         );
-        let value3 = GoldilocksHashOut::from_u128(2053);
+        let value3 = GoldilocksHashOut::from_u128(2);
         let key4 = (
-            GoldilocksHashOut::from_u128(832),
-            GoldilocksHashOut::from_u128(471),
-            GoldilocksHashOut::from_u128(8012),
+            sender1_account.address.to_hash_out().into(),
+            deposit_list[0].contract_address.0.into(),
+            deposit_list[0].variable_index.into(),
         );
-        let value4 = GoldilocksHashOut::from_u128(1111);
+        let value4 = GoldilocksHashOut::from_u128(8);
 
         let proof3 = sender1_tx_diff_tree
             .set(key3.0, key3.1, key3.2, value3)
@@ -138,54 +202,17 @@ mod tests {
             .set(key4.0, key4.1, key4.2, value4)
             .unwrap();
 
-        let sender1_input_witness = vec![proof1, proof2];
-        let sender1_output_witness = vec![proof3, proof4];
+        let purge_input_witness = vec![proof1];
+        let purge_output_witness = vec![proof3, proof4];
 
-        let deposit_sender1_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-            deposit_sender1_tree.into();
-        let sender1_deposit_root = deposit_sender1_tree
-            .get(&sender1_account.address.0.into())
-            .unwrap();
-        // dbg!(sender1_deposit_root);
-
-        let mut sender1_user_asset_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-            sender1_user_asset_tree.into();
-        let merge_process_proof = sender1_user_asset_tree
-            .set(
-                get_block_hash(&deposit_block.header).into(),
-                sender1_deposit_root,
-            )
-            .unwrap();
-
-        let merge_inclusion_proof2 = deposit_sender1_tree
-            .find(&sender1_account.address.0.into())
-            .unwrap();
-
-        // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
-        let deposit_tx_hash = HashOut::ZERO; // TODO: block hash を代わりに用いる, あるいは `hash(block_hash || 0)` として merge もこの形式に合わせる.
-        let mut deposit_tree = PoseidonSparseMerkleTree::new(node_data, Default::default());
-        deposit_tree
-            .set(deposit_tx_hash.into(), deposit_sender1_tree.get_root())
-            .unwrap();
-        let merge_inclusion_proof1 = deposit_tree.find(&deposit_tx_hash.into()).unwrap();
-
-        let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let merge_witnesses = vec![MergeProof {
-            is_deposit: true,
-            diff_tree_inclusion_proof: (
-                deposit_block.header,
-                merge_inclusion_proof1,
-                merge_inclusion_proof2,
-            ),
-            merge_process_proof,
-            account_tree_inclusion_proof: default_inclusion_proof,
-        }];
         let sender1_user_asset_root = WrappedHashOut::default();
+        let nonce = WrappedHashOut::rand();
         let transaction = service.send_assets(
             sender1_account,
             &merge_witnesses,
-            &sender1_input_witness,
-            &sender1_output_witness,
+            &purge_input_witness,
+            &purge_output_witness,
+            nonce,
             sender1_user_asset_root,
         );
 

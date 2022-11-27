@@ -3,16 +3,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use intmax_zkp_core::{rollup, sparse_merkle_tree, zkdsa};
-use rollup::circuits::merge_and_purge::MergeAndPurgeTransitionPublicInputs;
-use sparse_merkle_tree::{
-    goldilocks_poseidon::{
-        GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, WrappedHashOut,
+use intmax_zkp_core::{
+    sparse_merkle_tree::{
+        goldilocks_poseidon::{
+            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
+            WrappedHashOut,
+        },
+        node_data::{Node, NodeData},
     },
-    node_data::{Node, NodeData},
+    transaction::circuits::MergeAndPurgeTransitionPublicInputs,
+    zkdsa::account::{Account, Address},
 };
-use zkdsa::account::{Account, Address};
-
 use plonky2::field::goldilocks_field::GoldilocksField;
 use serde::{Deserialize, Serialize};
 
