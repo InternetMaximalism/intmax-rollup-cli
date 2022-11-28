@@ -6,9 +6,7 @@ use std::{
 
 use intmax_zkp_core::{
     rollup::gadgets::deposit_block::DepositInfo,
-    sparse_merkle_tree::goldilocks_poseidon::{
-        GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-    },
+    sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
     transaction::asset::{Asset, TokenKind},
     zkdsa::account::{Account, Address},
 };
@@ -57,7 +55,7 @@ enum SubCommand {
         user_address: Option<String>,
         #[structopt(long)]
         contract_address: String,
-        #[structopt(long)]
+        #[structopt(long = "token-id", short = "i")]
         variable_index: String,
         #[structopt(long)]
         amount: u64,
@@ -102,10 +100,7 @@ enum AccountCommand {
     #[structopt(name = "list")]
     List {},
     #[structopt(name = "set-default")]
-    SetDefault {
-        #[structopt(long)]
-        user_address: Option<String>,
-    },
+    SetDefault { user_address: Option<String> },
 }
 
 #[derive(Debug, StructOpt)]
@@ -119,10 +114,12 @@ enum TransactionCommand {
         receiver_address: String,
         #[structopt(long)]
         contract_address: String,
-        #[structopt(long)]
+        #[structopt(long = "token-id", short = "i")]
         variable_index: String,
         #[structopt(long)]
         amount: u64,
+        // #[structopt(long)]
+        // broadcast: bool,
     },
     /// Merge your own assets.
     #[structopt(name = "merge")]
@@ -130,6 +127,8 @@ enum TransactionCommand {
         #[structopt(long)]
         user_address: Option<String>,
     },
+    // #[structopt(name = "multi-send")]
+    // MultiSend {}
 }
 
 #[derive(Debug, StructOpt)]
@@ -296,7 +295,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .expect("user address was not found in wallet");
 
             println!("{}", serde_json::to_string(&user_state.assets).unwrap());
-            println!("{:?}", user_state.assets);
         }
         SubCommand::Transaction { tx_command } => match tx_command {
             TransactionCommand::Merge { user_address } => {
@@ -307,45 +305,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
 
-                let old_user_asset_root = user_state.asset_tree.get_root();
-                // dbg!(old_user_asset_root.to_string());
-
-                let (blocks, latest_block_number_deposit) = service.get_blocks(
-                    user_address,
-                    Some(user_state.last_seen_block_number_deposit),
-                    None,
-                );
-                // dbg!(&blocks.len());
-
-                let merge_witnesses_deposit =
-                    service.merge_deposits(blocks, user_address, user_state);
-                let (merge_witnesses_received, latest_block_number_merge) = service
-                    .get_merge_transaction_witness(
-                        user_address,
-                        user_state.last_seen_block_number_merge,
-                    );
-                let mut merge_witnesses_received = service.merge_received_asset(
-                    merge_witnesses_received,
-                    user_address,
-                    user_state,
-                );
-                let mut merge_witnesses = merge_witnesses_deposit;
-                merge_witnesses.append(&mut merge_witnesses_received);
-
-                let _new_user_asset_root = user_state.asset_tree.get_root();
-                // dbg!(new_user_asset_root.to_string());
-
-                let transaction = service.send_assets(
-                    user_state.account,
-                    &merge_witnesses,
-                    &[],
-                    &[],
-                    old_user_asset_root,
-                );
-
-                user_state.insert_pending_transactions(&[transaction]);
-                user_state.last_seen_block_number_deposit = latest_block_number_deposit;
-                user_state.last_seen_block_number_merge = latest_block_number_merge;
+                service.merge_and_purge_asset(user_state, user_address, &[], false);
             }
             TransactionCommand::Send {
                 user_address,
@@ -370,102 +330,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     amount,
                 };
 
-                let old_user_asset_root = user_state.asset_tree.get_root();
-                // dbg!(&old_user_asset_root);
-
-                let (blocks, latest_block_number_deposit) = service.get_blocks(
-                    user_address,
-                    Some(user_state.last_seen_block_number_deposit),
-                    None,
-                );
-                // dbg!(&blocks.len());
-
-                let merge_witnesses_deposit =
-                    service.merge_deposits(blocks, user_address, user_state);
-                let (merge_witnesses_received, latest_block_number_merge) = service
-                    .get_merge_transaction_witness(
-                        user_address,
-                        user_state.last_seen_block_number_merge,
-                    );
-                let mut merge_witnesses_received = service.merge_received_asset(
-                    merge_witnesses_received,
-                    user_address,
+                service.merge_and_purge_asset(
                     user_state,
+                    user_address,
+                    &[(receiver_address, output_asset)],
+                    true,
                 );
-                let mut merge_witnesses = merge_witnesses_deposit;
-                merge_witnesses.append(&mut merge_witnesses_received);
-
-                let _new_user_asset_root = user_state.asset_tree.get_root();
-                // dbg!(&new_user_asset_root);
-
-                let input_assets = user_state.assets.filter(output_asset.kind);
-
-                let mut input_amount = 0;
-                for asset in input_assets.0.iter() {
-                    input_amount += asset.1;
-                }
-
-                if output_asset.amount > input_amount {
-                    panic!("output asset amount is too much");
-                }
-
-                let rest_asset = Asset {
-                    kind: output_asset.kind,
-                    amount: input_amount - output_asset.amount,
-                };
-
-                let mut tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-                    LayeredLayeredPoseidonSparseMerkleTree::new(
-                        Default::default(),
-                        Default::default(),
-                    );
-
-                let output_witness = tx_diff_tree
-                    .set(
-                        receiver_address.0.into(),
-                        output_asset.kind.contract_address.0.into(),
-                        output_asset.kind.variable_index,
-                        HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
-                    )
-                    .unwrap();
-
-                let rest_witness = tx_diff_tree
-                    .set(
-                        user_address.0.into(),
-                        rest_asset.kind.contract_address.0.into(),
-                        rest_asset.kind.variable_index,
-                        HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
-                    )
-                    .unwrap();
-
-                let mut purge_input_witness = vec![];
-                for input_asset in input_assets.0.iter() {
-                    let input_witness = user_state
-                        .asset_tree
-                        .set(
-                            input_asset.2, // tx_hash
-                            input_asset.0.contract_address.0.into(),
-                            input_asset.0.variable_index,
-                            HashOut::from_partial(&[F::from_canonical_u64(input_asset.1)]).into(),
-                        )
-                        .unwrap();
-                    purge_input_witness.push(input_witness);
-                }
-
-                let purge_output_witness = vec![output_witness, rest_witness];
-
-                let transaction = service.send_assets(
-                    user_state.account,
-                    &merge_witnesses,
-                    &purge_input_witness,
-                    &purge_output_witness,
-                    old_user_asset_root,
-                );
-
-                user_state.insert_pending_transactions(&[transaction]);
-                user_state.assets.remove(output_asset.kind);
-                user_state.last_seen_block_number_deposit = latest_block_number_deposit;
-                user_state.last_seen_block_number_merge = latest_block_number_merge;
             }
         },
         SubCommand::Block { block_command } => match block_command {
@@ -479,11 +349,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 println!("block sign");
                 let user_address =
                     parse_address(&wallet, user_address).expect("user address was not given");
-                let pending_transactions = wallet.get_pending_transaction_hashes(user_address);
                 let user_state = wallet
                     .data
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
+                let pending_transactions = user_state.get_pending_transaction_hashes();
 
                 for tx_hash in pending_transactions {
                     let tx_inclusion_proof =
@@ -492,6 +362,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     let received_signature =
                         service.sign_to_message(user_state.account, *block_hash);
                     service.send_received_signature(received_signature, tx_hash);
+                    user_state.remove_pending_transactions(tx_hash);
                 }
             }
             BlockCommand::Approve {} => {

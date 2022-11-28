@@ -1,22 +1,23 @@
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
-    rollup::{
-        block::BlockInfo,
-        circuits::merge_and_purge::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
-        deposit::make_deposit_proof,
-        gadgets::deposit_block::DepositInfo,
-    },
+    rollup::{block::BlockInfo, deposit::make_deposit_proof, gadgets::deposit_block::DepositInfo},
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
-        goldilocks_poseidon::{NodeDataMemory, WrappedHashOut},
+        goldilocks_poseidon::{
+            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+            WrappedHashOut,
+        },
     },
     transaction::{
-        asset::{ReceivedAssetProof, TokenKind},
+        asset::{Asset, ReceivedAssetProof, TokenKind},
+        block_header::get_block_hash,
+        circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
         gadgets::merge::MergeProof,
     },
     zkdsa::{
@@ -26,9 +27,9 @@ use intmax_zkp_core::{
 };
 use plonky2::{
     field::types::{Field, PrimeField64},
-    hash::hash_types::HashOut,
+    hash::{hash_types::HashOut, poseidon::PoseidonHash},
     iop::witness::PartialWitness,
-    plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+    plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
 };
 use serde::{Deserialize, Serialize};
 
@@ -118,7 +119,7 @@ impl Config {
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -138,10 +139,14 @@ impl Config {
         merge_witnesses: &[MergeProof<F>],
         purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        nonce: WrappedHashOut<F>,
         user_asset_root: WrappedHashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let user_tx_proof = {
             let merge_and_purge_circuit = make_user_proof_circuit::<
+                F,
+                C,
+                D,
                 N_LOG_MAX_USERS,
                 N_LOG_MAX_TXS,
                 N_LOG_MAX_CONTRACTS,
@@ -161,7 +166,8 @@ impl Config {
                 merge_witnesses,
                 purge_input_witnesses,
                 purge_output_witnesses,
-                *user_asset_root,
+                nonce,
+                user_asset_root,
             );
             // dbg!(serde_json::to_string(&public_inputs).unwrap());
 
@@ -182,6 +188,7 @@ impl Config {
         };
 
         let transaction = user_tx_proof.public_inputs.clone();
+        println!("transaction hash is 0x{}", transaction.diff_root);
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
@@ -192,7 +199,7 @@ impl Config {
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -212,46 +219,55 @@ impl Config {
     ) -> Vec<MergeProof<F>> {
         let mut merge_witnesses = vec![];
         for block in blocks {
-            let (index, found_deposit_info) = block
+            let user_deposits = block
                 .deposit_list
                 .iter()
-                .enumerate()
-                .find(|(_, leaf)| leaf.receiver_address == user_address)
-                .expect("your deposit info was not found");
-            let (_deposit_root, deposit_proof) =
-                make_deposit_proof(&block.deposit_list, Some(index));
-            let (deposit_proof1, deposit_proof2) = deposit_proof.unwrap();
+                .filter(|leaf| leaf.receiver_address == user_address)
+                .collect::<Vec<_>>();
+            let (deposit_proof1, deposit_proof2) =
+                make_deposit_proof(&block.deposit_list, user_address, N_LOG_TXS);
+            dbg!(&deposit_proof1.root, deposit_proof1.value);
 
-            let pseudo_tx_hash = HashOut::ZERO;
-            let merge_process_proof = user_state
-                .asset_tree
-                .set(
-                    pseudo_tx_hash.into(),
-                    found_deposit_info.contract_address.0.into(),
-                    found_deposit_info.variable_index.into(),
-                    HashOut::from_partial(&[found_deposit_info.amount]).into(),
-                )
-                .unwrap();
+            let deposit_tx_hash =
+                PoseidonHash::two_to_one(*deposit_proof1.value, get_block_hash(&block.header))
+                    .into();
+            dbg!(&deposit_tx_hash);
 
-            user_state.assets.add(
-                TokenKind {
-                    contract_address: found_deposit_info.contract_address,
-                    variable_index: found_deposit_info.variable_index.into(),
-                },
-                found_deposit_info.amount.to_canonical_u64(),
-                pseudo_tx_hash.into(),
-            );
+            let diff_tree_inclusion_proof = (block.header, deposit_proof1, deposit_proof2);
 
-            let (account_tree_inclusion_proof, _) =
-                self.get_latest_account_tree_proof(user_address);
+            for found_deposit_info in user_deposits {
+                let merge_process_proof = user_state
+                    .asset_tree
+                    .set(
+                        deposit_tx_hash,
+                        found_deposit_info.contract_address.0.into(),
+                        found_deposit_info.variable_index.into(),
+                        HashOut::from_partial(&[found_deposit_info.amount]).into(),
+                    )
+                    .unwrap();
 
-            let merge_proof = MergeProof {
-                is_deposit: true,
-                diff_tree_inclusion_proof: (block.header, deposit_proof1, deposit_proof2),
-                merge_process_proof: merge_process_proof.0,
-                account_tree_inclusion_proof,
-            };
-            merge_witnesses.push(merge_proof);
+                user_state.assets.add(
+                    TokenKind {
+                        contract_address: found_deposit_info.contract_address,
+                        variable_index: found_deposit_info.variable_index.into(),
+                    },
+                    found_deposit_info.amount.to_canonical_u64(),
+                    deposit_tx_hash,
+                );
+
+                // deposit のときは nonce が 0
+                let deposit_nonce = Default::default();
+                let merge_proof = MergeProof {
+                    is_deposit: true,
+                    diff_tree_inclusion_proof: diff_tree_inclusion_proof.clone(),
+                    merge_process_proof: merge_process_proof.0,
+                    latest_account_tree_inclusion_proof: SmtInclusionProof::with_root(
+                        Default::default(),
+                    ),
+                    nonce: deposit_nonce,
+                };
+                merge_witnesses.push(merge_proof);
+            }
         }
 
         merge_witnesses
@@ -276,37 +292,32 @@ impl Config {
             // let (deposit_proof1, deposit_proof2) = deposit_proof.unwrap();
 
             // let pseudo_tx_hash = HashOut::ZERO;
-            let tx_hash = witness.diff_tree_inclusion_proof.1.key;
-            let contract_address = witness.asset.kind.contract_address;
-            let variable_index = witness.asset.kind.variable_index;
-            let amount = witness.asset.amount;
-            let merge_process_proof = user_state
-                .asset_tree
-                .set(
-                    tx_hash,
-                    contract_address.0.into(),
-                    variable_index,
-                    HashOut::from_partial(&[F::from_canonical_u64(amount)]).into(),
-                )
-                .unwrap();
-
-            user_state.assets.add(
-                TokenKind {
-                    contract_address: Address(contract_address.0),
-                    variable_index,
-                },
-                amount,
-                tx_hash,
+            let tx_hash = witness.diff_tree_inclusion_proof.1.value;
+            let asset_root = witness.diff_tree_inclusion_proof.2.value;
+            let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
+                user_state.asset_tree.nodes_db.clone(),
+                user_state.asset_tree.root,
             );
 
-            // let (account_tree_inclusion_proof, _) =
-            //     self.get_latest_account_tree_proof(user_address);
+            let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
+            let merge_key = if witness.is_deposit {
+                PoseidonHash::two_to_one(*tx_hash, block_hash)
+            } else {
+                *tx_hash
+            };
+
+            let merge_process_proof = asset_tree.set(merge_key.into(), asset_root).unwrap();
+
+            for asset in witness.assets {
+                user_state.assets.add(asset.kind, asset.amount, merge_key.into());
+            }
 
             let merge_proof = MergeProof {
                 is_deposit: witness.is_deposit,
                 diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
-                merge_process_proof: merge_process_proof.0,
-                account_tree_inclusion_proof: witness.account_tree_inclusion_proof,
+                merge_process_proof,
+                latest_account_tree_inclusion_proof: witness.latest_account_tree_inclusion_proof,
+                nonce: witness.nonce,
             };
             merge_witnesses.push(merge_proof);
         }
@@ -336,7 +347,7 @@ impl Config {
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -350,6 +361,213 @@ impl Config {
         }
     }
 
+    pub fn merge_and_purge_asset(
+        &self,
+        user_state: &mut UserState<NodeDataMemory>,
+        user_address: Address<F>,
+        diffs: &[(Address<F>, Asset<F>)],
+        broadcast: bool,
+    ) {
+        let old_user_asset_root = user_state.asset_tree.get_root();
+        // dbg!(old_user_asset_root.to_string());
+
+        let (blocks, latest_block_number_deposit) = self.get_blocks(
+            user_address,
+            Some(user_state.last_seen_block_number_deposit),
+            None,
+        );
+        // dbg!(&blocks.len());
+
+        let merge_witnesses_deposit = self.merge_deposits(blocks, user_address, user_state);
+        dbg!(&merge_witnesses_deposit.len(), latest_block_number_deposit);
+
+        let (merge_witnesses_received, latest_block_number_merge) = self
+            .get_merge_transaction_witness(
+                user_address,
+                Some(user_state.last_seen_block_number_merge),
+                None,
+            );
+        let mut merge_witnesses_received =
+            self.merge_received_asset(merge_witnesses_received, user_address, user_state);
+        dbg!(&merge_witnesses_received.len(), latest_block_number_merge);
+
+        let mut merge_witnesses = merge_witnesses_deposit;
+        merge_witnesses.append(&mut merge_witnesses_received);
+
+        let _new_user_asset_root = user_state.asset_tree.get_root();
+        // dbg!(new_user_asset_root.to_string());
+
+        // 人に渡す asset から構成される tree
+        let mut tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+            LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
+
+        let mut purge_input_witness = vec![];
+        let mut purge_output_witness = vec![];
+        let mut purge_output_inclusion_witnesses = HashMap::new();
+        let mut assets_list: HashMap<_, Vec<_>> = HashMap::new();
+        let mut output_asset_map = HashMap::new();
+        for (receiver_address, output_asset) in diffs {
+            let output_witness = tx_diff_tree
+                .set(
+                    receiver_address.0.into(),
+                    output_asset.kind.contract_address.0.into(),
+                    output_asset.kind.variable_index,
+                    HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
+                )
+                .unwrap();
+
+            purge_output_witness.push(output_witness);
+
+            // token の種類ごとに output amount を合計する
+            let old_amount: u64 = output_asset_map
+                .get(&output_asset.kind)
+                .cloned()
+                .unwrap_or_default();
+            output_asset_map.insert(output_asset.kind, old_amount + output_asset.amount);
+        }
+
+        for (kind, output_amount) in output_asset_map {
+            let input_assets = user_state.assets.filter(kind);
+
+            let mut input_amount = 0;
+            for asset in input_assets.0.iter() {
+                input_amount += asset.1;
+            }
+
+            if output_amount > input_amount {
+                panic!("output asset amount is too much");
+            }
+
+            let rest_asset = Asset {
+                kind,
+                amount: input_amount - output_amount,
+            };
+
+            // input (所有している分) と output (人に渡す分) の差額を自身に渡す
+            let rest_witness = tx_diff_tree
+                .set(
+                    user_address.0.into(),
+                    rest_asset.kind.contract_address.0.into(),
+                    rest_asset.kind.variable_index,
+                    HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
+                )
+                .unwrap();
+
+            purge_output_witness.push(rest_witness);
+
+            // input に含めた asset を取り除く
+            for input_asset in input_assets.0.iter() {
+                let input_witness = user_state
+                    .asset_tree
+                    .set(
+                        input_asset.2, // merge_key
+                        input_asset.0.contract_address.0.into(),
+                        input_asset.0.variable_index,
+                        // HashOut::from_partial(&[F::from_canonical_u64(input_asset.1)]).into(),
+                        HashOut::ZERO.into(),
+                    )
+                    .unwrap();
+                purge_input_witness.push(input_witness);
+            }
+
+            user_state.assets.remove(kind);
+        }
+
+        let nonce = WrappedHashOut::rand();
+
+        let transaction = self.send_assets(
+            user_state.account,
+            &merge_witnesses,
+            &purge_input_witness,
+            &purge_output_witness,
+            nonce,
+            old_user_asset_root,
+        );
+        dbg!(transaction.diff_root);
+
+        // 宛先ごとに渡す asset を整理する
+        let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory> = tx_diff_tree.into();
+        for witness in purge_output_witness.iter() {
+            let receiver_address = witness.0.new_key;
+            let asset = Asset {
+                kind: TokenKind {
+                    contract_address: Address(*witness.1.new_key),
+                    variable_index: witness.2.new_key,
+                },
+                amount: witness.2.new_value.0.elements[0].to_canonical_u64(),
+            };
+            if let Some(assets) = assets_list.get_mut(&receiver_address) {
+                assets.push(asset);
+            } else {
+                let proof = tx_diff_tree.find(&receiver_address).unwrap();
+                purge_output_inclusion_witnesses.insert(receiver_address, proof);
+                assets_list.insert(receiver_address, vec![asset]);
+            }
+        }
+
+        if broadcast {
+            self.broadcast_transaction(
+                user_address,
+                transaction.tx_hash,
+                nonce,
+                purge_output_inclusion_witnesses
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                assets_list.values().cloned().collect::<Vec<_>>(),
+            );
+        }
+
+        user_state.insert_pending_transactions(&[transaction]);
+        user_state.last_seen_block_number_deposit = latest_block_number_deposit;
+        user_state.last_seen_block_number_merge = latest_block_number_merge;
+    }
+
+    /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
+    pub fn broadcast_transaction(
+        &self,
+        user_address: Address<F>,
+        tx_hash: WrappedHashOut<F>,
+        nonce: WrappedHashOut<F>,
+        purge_output_inclusion_witnesses: Vec<SmtInclusionProof<F>>,
+        assets: Vec<Vec<Asset<F>>>,
+    ) {
+        if purge_output_inclusion_witnesses.is_empty() {
+            println!("no purging transaction given");
+            return;
+        }
+
+        let payload = RequestTxBroadcastBody {
+            signer_address: user_address,
+            tx_hash,
+            nonce,
+            purge_output_inclusion_witnesses,
+            assets,
+        };
+
+        let body = serde_json::to_string(&payload).expect("fail to encode");
+
+        let resp = reqwest::blocking::Client::new()
+            .post(self.aggregator_api_url("/tx/broadcast"))
+            .body(body)
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .expect("fail to post");
+        if resp.status() != 200 {
+            panic!("{}", resp.text().unwrap());
+        }
+
+        let resp = resp
+            .json::<ResponseTxBroadcastBody>()
+            .expect("fail to parse JSON");
+
+        if resp.ok {
+            println!("broadcast transaction successfully");
+        } else {
+            panic!("fail to broadcast transaction");
+        }
+    }
+
     pub fn trigger_propose_block(&self) -> HashOut<F> {
         let body = r#"{}"#;
 
@@ -360,7 +578,7 @@ impl Config {
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -380,7 +598,7 @@ impl Config {
             .send()
             .expect("fail to post");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -416,7 +634,7 @@ impl Config {
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -441,7 +659,7 @@ impl Config {
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -487,7 +705,7 @@ impl Config {
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp
@@ -514,7 +732,12 @@ impl Config {
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
-            .expect("fail to post")
+            .expect("fail to post");
+        if resp.status() != 200 {
+            panic!("{}", resp.text().unwrap());
+        }
+
+        let resp = resp
             .json::<ResponseSignedDiffSendBody>()
             .expect("fail to parse JSON");
 
@@ -528,19 +751,23 @@ impl Config {
     pub fn get_merge_transaction_witness(
         &self,
         user_address: Address<F>,
-        last_seen_block_number: u32,
+        since: Option<u32>,
+        until: Option<u32>,
     ) -> (Vec<ReceivedAssetProof<F>>, u32) {
-        let query = vec![
-            ("user_address", format!("0x{}", user_address)),
-            ("since", format!("{}", last_seen_block_number)),
-        ];
+        let mut query = vec![("user_address", format!("0x{}", user_address))];
+        if let Some(since) = since {
+            query.push(("since", format!("{}", since)));
+        }
+        if let Some(until) = until {
+            query.push(("until", format!("{}", until)));
+        }
 
         let request = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url("/tx/received"))
             .query(&query);
         let resp = request.send().expect("fail to fetch");
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            panic!("{}", resp.text().unwrap());
         }
 
         let resp = resp

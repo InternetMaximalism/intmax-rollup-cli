@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 
-use intmax_zkp_core::{rollup, sparse_merkle_tree, transaction::asset::TokenKind, zkdsa};
+use intmax_zkp_core::{
+    sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
+    transaction::{asset::TokenKind, circuits::MergeAndPurgeTransitionPublicInputs},
+    zkdsa::account::Address,
+};
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
-use rollup::circuits::merge_and_purge::MergeAndPurgeTransitionPublicInputs;
 use serde::{Deserialize, Serialize};
-use sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut};
-use zkdsa::account::Address;
 
+/// `(token_kind, amount, merge_key)` の集合
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
 pub struct Assets<F: RichField>(pub HashSet<(TokenKind<F>, u64, WrappedHashOut<F>)>);
