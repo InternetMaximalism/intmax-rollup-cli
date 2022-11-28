@@ -29,6 +29,6 @@ intmax block approve # aggregator's operation
 ```sh
 intmax tx send --amount 1 --contract-address 0x01 -i 0x00 --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 intmax block propose # aggregator's operation
-intamx block sign
+intmax block sign
 intmax block approve # aggregator's operation
 ```
