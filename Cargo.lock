@@ -296,9 +296,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.12"
+version = "0.9.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96bf8df95e795db1a4aca2957ad884a2df35413b24bbeb3114422f3cc21498e8"
+checksum = "01a9af1f4c2ef74bb8aa1f7e19706bc72d03598c8a570bb5de72243c7a9d9d5a"
 dependencies = [
  "autocfg",
  "cfg-if 1.0.0",
@@ -309,9 +309,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.13"
+version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "422f23e724af1240ec469ea1e834d87a4b59ce2efe2c6a96256b0c47e2fd86aa"
+checksum = "4fb766fa798726286dbbb842f174001dab8abc7b627a1dd86e0b7222a95d929f"
 dependencies = [
  "cfg-if 1.0.0",
 ]
@@ -979,7 +979,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface#3f64d39ccf2047a980f0a9cbd1cc84b93345165e"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=30edf6b5cad06c91857a665493ff710c9cead7ac#30edf6b5cad06c91857a665493ff710c9cead7ac"
 dependencies = [
  "hex",
  "intmax-zkp-core",
@@ -992,7 +992,7 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core#57507f07364500227678e4e790a777a38f167864"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=0f3ac19dadfbebdc37e09572443edf18ee3de4b2#0f3ac19dadfbebdc37e09572443edf18ee3de4b2"
 dependencies = [
  "anyhow",
  "hex",
@@ -1145,7 +1145,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "maybe_rayon"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "rayon",
 ]
@@ -1383,9 +1383,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openssl"
-version = "0.10.42"
+version = "0.10.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12fc0523e3bd51a692c8850d075d74dc062ccf251c0110668cbd921917118a13"
+checksum = "020433887e44c27ff16365eaa2d380547a94544ad509aff6eb5b6e3e0b27b376"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -1415,9 +1415,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.77"
+version = "0.9.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b03b84c3b2d099b81f0953422b4d4ad58761589d0229b5506356afca05a3670a"
+checksum = "07d5c8cb6e57b3a3612064d7b18b117912b4ce70955c2504d4b741c9e244b132"
 dependencies = [
  "autocfg",
  "cc",
@@ -1516,7 +1516,7 @@ checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 [[package]]
 name = "plonky2"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1538,7 +1538,7 @@ dependencies = [
 [[package]]
 name = "plonky2_ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1552,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "plonky2_field"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1567,7 +1567,7 @@ dependencies = [
 [[package]]
 name = "plonky2_u32"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1578,7 +1578,7 @@ dependencies = [
 [[package]]
 name = "plonky2_util"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2#08cabf2ad84b22b8cedf9c13db472f8ddd25daa7"
+source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
 dependencies = [
  "rand 0.8.5",
 ]
@@ -1928,9 +1928,9 @@ checksum = "e25dfac463d778e353db5be2449d1cce89bd6fd23c9f1ea21310ce6e5a1b29c4"
 
 [[package]]
 name = "serde"
-version = "1.0.147"
+version = "1.0.148"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d193d69bae983fc11a79df82342761dfbf28a99fc8d203dca4c3c1b590948965"
+checksum = "e53f64bb4ba0191d6d0676e1b141ca55047d83b74f5607e6d8eb88126c52c2dc"
 dependencies = [
  "serde_derive",
 ]
@@ -1948,9 +1948,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.147"
+version = "1.0.148"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f1d362ca8fc9c3e3a7484440752472d68a6caa98f1ab81d99b5dfe517cec852"
+checksum = "a55492425aa53521babf6137309e7d34c20bbfbbfcfe2c7f3a047fd1f6b92c0c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1959,9 +1959,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.88"
+version = "1.0.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e8b3801309262e8184d9687fb697586833e939767aea0dda89f5a8e650e8bd7"
+checksum = "020ff22c755c2ed3f8cf162dbb41a7268d934702f3ed3631656ea597e08fc3db"
 dependencies = [
  "itoa 1.0.4",
  "ryu",
@@ -2112,9 +2112,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a864042229133ada95abf3b54fdc62ef5ccabe9515b64717bcb9a1919e59445d"
+checksum = "4ae548ec36cf198c0ef7710d3c230987c2d6d7bd98ad6edc0274462724c585ce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2175,9 +2175,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.1.44"
+version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
+checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
 dependencies = [
  "libc",
  "wasi 0.10.0+wasi-snapshot-preview1",
