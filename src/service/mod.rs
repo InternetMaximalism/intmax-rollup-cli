@@ -11,7 +11,7 @@ use intmax_zkp_core::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
         goldilocks_poseidon::{
             LayeredLayeredPoseidonSparseMerkleTree, LayeredPoseidonSparseMerkleTree,
-            NodeDataMemory, PoseidonSparseMerkleTree, WrappedHashOut,
+            NodeDataMemory, PoseidonSparseMerkleTree, RootDataMemory, RootDataTmp, WrappedHashOut,
         },
     },
     transaction::{
@@ -215,7 +215,7 @@ impl Config {
         &self,
         blocks: Vec<BlockInfo<F>>,
         user_address: Address<F>,
-        user_state: &mut UserState<NodeDataMemory>,
+        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
     ) -> Vec<MergeProof<F>> {
         let mut merge_witnesses = vec![];
         for block in blocks {
@@ -239,7 +239,7 @@ impl Config {
             for found_deposit_info in user_deposits {
                 let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
                     user_state.asset_tree.nodes_db.clone(),
-                    Default::default(),
+                    RootDataTmp::default(),
                 );
                 {
                     user_state.assets.add(
@@ -259,16 +259,16 @@ impl Config {
                         .unwrap();
                 }
 
-                let asset_root = inner_asset_tree.get_root();
+                let asset_root = inner_asset_tree.get_root().unwrap();
 
-                let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
+                let mut asset_tree = PoseidonSparseMerkleTree::new(
                     user_state.asset_tree.nodes_db.clone(),
-                    user_state.asset_tree.get_root(),
+                    RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
                 );
                 let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
                 user_state
                     .asset_tree
-                    .change_root(asset_tree.get_root())
+                    .change_root(asset_tree.get_root().unwrap())
                     .unwrap();
                 let amount = user_state
                     .asset_tree
@@ -302,7 +302,7 @@ impl Config {
         &self,
         received_asset_witness: Vec<ReceivedAssetProof<F>>,
         _user_address: Address<F>,
-        user_state: &mut UserState<NodeDataMemory>,
+        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
     ) -> Vec<MergeProof<F>> {
         let mut merge_witnesses = vec![];
         for witness in received_asset_witness {
@@ -331,7 +331,7 @@ impl Config {
             // ついでに user_state.asset_tree.nodes_db に contract_address 層と variable_index 層のノードを cache する
             let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
                 user_state.asset_tree.nodes_db.clone(),
-                Default::default(),
+                RootDataTmp::default(),
             );
             for asset in witness.assets {
                 user_state.assets.add(asset.kind, asset.amount, merge_key);
@@ -345,17 +345,17 @@ impl Config {
             }
 
             // assert_eq!(inner_asset_tree.get_root(), asset_root);
-            dbg!(inner_asset_tree.get_root(), asset_root);
+            dbg!(inner_asset_tree.get_root().unwrap(), asset_root);
 
-            let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
+            let mut asset_tree = PoseidonSparseMerkleTree::new(
                 user_state.asset_tree.nodes_db.clone(),
-                user_state.asset_tree.get_root(),
+                RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
             );
             let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
             dbg!(&merge_process_proof);
             user_state
                 .asset_tree
-                .change_root(asset_tree.get_root())
+                .change_root(asset_tree.get_root().unwrap())
                 .unwrap();
 
             let merge_proof = MergeProof {
@@ -409,12 +409,12 @@ impl Config {
 
     pub fn merge_and_purge_asset(
         &self,
-        user_state: &mut UserState<NodeDataMemory>,
+        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
         user_address: Address<F>,
         diffs: &[(Address<F>, Asset<F>)],
         broadcast: bool,
     ) {
-        let old_user_asset_root = user_state.asset_tree.get_root();
+        let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(old_user_asset_root.to_string());
 
         let (blocks, latest_block_number_deposit) = self.get_blocks(
@@ -444,8 +444,10 @@ impl Config {
         // dbg!(new_user_asset_root.to_string());
 
         // 人に渡す asset から構成される tree
-        let mut tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-            LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
+        let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+            NodeDataMemory::default(),
+            RootDataTmp::default(),
+        );
 
         let mut purge_input_witness = vec![];
         let mut purge_output_witness = vec![];
@@ -541,7 +543,8 @@ impl Config {
         dbg!(transaction.diff_root);
 
         // 宛先ごとに渡す asset を整理する
-        let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory> = tx_diff_tree.into();
+        let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataTmp> =
+            tx_diff_tree.into();
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
         let mut assets_map: HashMap<_, (_, Vec<_>)> = HashMap::new();
         for witness in purge_output_witness.iter() {
