@@ -322,6 +322,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .expect("user address was not found in wallet");
 
                 let receiver_address = Address::from_str(&receiver_address[2..]).unwrap();
+                if user_address == receiver_address {
+                    anyhow::bail!("cannot send asset to myself");
+                }
+
                 let output_asset = Asset {
                     kind: TokenKind {
                         contract_address: Address::from_str(&contract_address[2..]).unwrap(),

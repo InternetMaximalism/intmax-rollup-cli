@@ -1,15 +1,13 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 use intmax_zkp_core::{
     sparse_merkle_tree::{
         goldilocks_poseidon::{
             GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            WrappedHashOut,
+            RootDataMemory, WrappedHashOut,
         },
         node_data::{Node, NodeData},
+        root_data::RootData,
     },
     transaction::circuits::MergeAndPurgeTransitionPublicInputs,
     zkdsa::account::{Account, Address},
@@ -22,9 +20,12 @@ use super::types::{Assets, Wallet};
 type F = GoldilocksField;
 
 #[derive(Clone, Debug)]
-pub struct UserState<D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>> {
+pub struct UserState<
+    D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>,
+    R: RootData<GoldilocksHashOut>,
+> {
     pub account: Account<F>,
-    pub asset_tree: LayeredLayeredPoseidonSparseMerkleTree<D>,
+    pub asset_tree: LayeredLayeredPoseidonSparseMerkleTree<D, R>,
     pub assets: Assets<F>,
     pub last_seen_block_number_deposit: u32,
     pub last_seen_block_number_merge: u32,
@@ -49,15 +50,15 @@ pub struct SerializableUserState {
     pub transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>, // pending_transactions
 }
 
-impl From<SerializableUserState> for UserState<NodeDataMemory> {
+impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
     fn from(value: SerializableUserState) -> Self {
         let mut asset_tree_nodes = NodeDataMemory::default();
         asset_tree_nodes
             .multi_insert(value.asset_tree_nodes)
             .unwrap();
         let asset_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
-            Arc::new(Mutex::new(asset_tree_nodes)),
-            value.asset_tree_root,
+            asset_tree_nodes,
+            value.asset_tree_root.into(),
         );
         let mut transactions = HashMap::new();
         for tx in value.transactions {
@@ -75,7 +76,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory> {
     }
 }
 
-impl<'de> Deserialize<'de> for UserState<NodeDataMemory> {
+impl<'de> Deserialize<'de> for UserState<NodeDataMemory, RootDataMemory> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = SerializableUserState::deserialize(deserializer)?;
 
@@ -83,11 +84,17 @@ impl<'de> Deserialize<'de> for UserState<NodeDataMemory> {
     }
 }
 
-impl From<UserState<NodeDataMemory>> for SerializableUserState {
-    fn from(value: UserState<NodeDataMemory>) -> Self {
-        let asset_tree_root = value.asset_tree.get_root();
-        let asset_tree_nodes = value.asset_tree.nodes_db.lock().unwrap().clone();
-        let asset_tree_nodes = asset_tree_nodes.nodes.into_iter().collect::<Vec<_>>();
+impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
+    fn from(value: UserState<NodeDataMemory, RootDataMemory>) -> Self {
+        let asset_tree_root = value.asset_tree.get_root().unwrap();
+        let asset_tree_nodes = value.asset_tree.nodes_db.clone();
+        let asset_tree_nodes = asset_tree_nodes
+            .nodes
+            .lock()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>();
         let transactions = value.transactions.values().cloned().collect::<Vec<_>>();
 
         Self {
@@ -102,7 +109,7 @@ impl From<UserState<NodeDataMemory>> for SerializableUserState {
     }
 }
 
-impl Serialize for UserState<NodeDataMemory> {
+impl Serialize for UserState<NodeDataMemory, RootDataMemory> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let raw = SerializableUserState::from(self.clone());
 
@@ -110,7 +117,11 @@ impl Serialize for UserState<NodeDataMemory> {
     }
 }
 
-impl<D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>> UserState<D> {
+impl<
+        D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>,
+        R: RootData<GoldilocksHashOut>,
+    > UserState<D, R>
+{
     pub fn insert_pending_transactions(
         &mut self,
         pending_transactions: &[MergeAndPurgeTransitionPublicInputs<GoldilocksField>],
@@ -134,13 +145,17 @@ impl<D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>> UserS
 
 #[derive(Clone)]
 pub struct WalletOnMemory {
-    pub data: HashMap<Address<F>, UserState<NodeDataMemory>>,
+    pub data: HashMap<Address<F>, UserState<NodeDataMemory, RootDataMemory>>,
     pub default_account: Option<Address<F>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializableWalletOnMemory {
-    pub data: Vec<UserState<NodeDataMemory>>,
+    // #[serde(bound(
+    //     serialize = "Vec<UserState<NodeDataMemory, RootDataMemory>>: Serialize",
+    //     deserialize = "Vec<UserState<NodeDataMemory, RootDataMemory>>: Deserialize<'de>"
+    // ))]
+    pub data: Vec<UserState<NodeDataMemory, RootDataMemory>>,
     #[serde(default)]
     pub default_account: Option<Address<F>>,
 }

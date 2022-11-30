@@ -9,8 +9,6 @@ mod tests {
     // type H = <C as GenericConfig<D>>::InnerHasher;
     type F = <C as GenericConfig<D>>::F;
 
-    use std::sync::{Arc, Mutex};
-
     use intmax_rollup_interface::constants::N_LOG_TXS;
     use intmax_zkp_core::{
         merkle_tree::tree::get_merkle_proof,
@@ -19,7 +17,7 @@ mod tests {
             goldilocks_poseidon::{
                 GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
                 LayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
-                WrappedHashOut,
+                RootDataMemory, RootDataTmp, WrappedHashOut,
             },
             proof::SparseMerkleInclusionProof,
         },
@@ -55,7 +53,7 @@ mod tests {
 
         // dbg!(&purge_proof_circuit_data.common);
 
-        let sender1_nodes_db: Arc<Mutex<NodeDataMemory>> = Default::default();
+        let sender1_nodes_db = NodeDataMemory::default();
 
         let deposit_list = vec![
             DepositInfo {
@@ -79,7 +77,7 @@ mod tests {
 
         let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             sender1_nodes_db.clone(),
-            Default::default(),
+            RootDataTmp::default(),
         );
 
         for deposit_info in deposit_list.clone() {
@@ -94,9 +92,9 @@ mod tests {
         }
 
         let deposit_diff_root =
-            PoseidonHash::two_to_one(*deposit_sender1_tree.get_root(), HashOut::ZERO);
+            PoseidonHash::two_to_one(*deposit_sender1_tree.get_root().unwrap(), HashOut::ZERO);
 
-        let deposit_sender1_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
+        let deposit_sender1_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataTmp> =
             deposit_sender1_tree.into();
 
         let merge_inclusion_proof2 = deposit_sender1_tree
@@ -104,14 +102,13 @@ mod tests {
             .unwrap();
 
         // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
-        let merge_inclusion_proof1 =
-            get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
+        let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
 
         let deposit_nonce = WrappedHashOut::ZERO;
         let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
 
-        let mut sender1_inner_user_asset_tree: LayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-            LayeredPoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), Default::default());
+        let mut sender1_inner_user_asset_tree =
+            LayeredPoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), RootDataTmp::default());
 
         for deposit_info in deposit_list.clone() {
             sender1_inner_user_asset_tree
@@ -123,15 +120,15 @@ mod tests {
                 .unwrap();
         }
 
-        let mut sender1_user_asset_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-            PoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), Default::default());
+        let mut sender1_user_asset_tree =
+            PoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), RootDataTmp::default());
 
         let block_hash = get_block_hash(&deposit_block.header);
         let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, block_hash);
         let merge_process_proof = sender1_user_asset_tree
             .set(
                 deposit_tx_hash.into(),
-                sender1_inner_user_asset_tree.get_root(),
+                sender1_inner_user_asset_tree.get_root().unwrap(),
             )
             .unwrap();
 
@@ -158,7 +155,7 @@ mod tests {
             assert_eq!(root, *merge_witness.diff_tree_inclusion_proof.1.root);
         }
 
-        let mut sender1_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+        let mut sender1_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory, _> =
             sender1_user_asset_tree.into();
 
         let zero = WrappedHashOut::ZERO;
@@ -179,8 +176,10 @@ mod tests {
         //     )
         //     .unwrap();
 
-        let mut sender1_tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-            LayeredLayeredPoseidonSparseMerkleTree::new(sender1_nodes_db, Default::default());
+        let mut sender1_tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+            sender1_nodes_db,
+            RootDataMemory::default(),
+        );
 
         let key3 = (
             sender2_account.address.to_hash_out().into(),
