@@ -27,8 +27,7 @@ pub struct UserState<
     pub account: Account<F>,
     pub asset_tree: LayeredLayeredPoseidonSparseMerkleTree<D, R>,
     pub assets: Assets<F>,
-    pub last_seen_block_number_deposit: u32,
-    pub last_seen_block_number_merge: u32,
+    pub last_seen_block_number: u32,
     pub transactions: HashMap<WrappedHashOut<F>, MergeAndPurgeTransitionPublicInputs<F>>,
 }
 
@@ -43,9 +42,7 @@ pub struct SerializableUserState {
     pub asset_tree_root: WrappedHashOut<F>,
     pub assets: Assets<F>,
     #[serde(default)]
-    pub last_seen_block_number_deposit: u32,
-    #[serde(default)]
-    pub last_seen_block_number_merge: u32,
+    pub last_seen_block_number: u32,
     #[serde(default)]
     pub transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>, // pending_transactions
 }
@@ -69,8 +66,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             account: value.account,
             asset_tree,
             assets: value.assets,
-            last_seen_block_number_deposit: value.last_seen_block_number_deposit,
-            last_seen_block_number_merge: value.last_seen_block_number_merge,
+            last_seen_block_number: value.last_seen_block_number,
             transactions,
         }
     }
@@ -103,8 +99,7 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             asset_tree_root,
             assets: value.assets,
             transactions,
-            last_seen_block_number_deposit: value.last_seen_block_number_deposit,
-            last_seen_block_number_merge: value.last_seen_block_number_merge,
+            last_seen_block_number: value.last_seen_block_number,
         }
     }
 }
@@ -219,8 +214,7 @@ impl Wallet for WalletOnMemory {
                 asset_tree,
                 assets: Default::default(),
                 transactions: Default::default(),
-                last_seen_block_number_deposit: 0,
-                last_seen_block_number_merge: 0,
+                last_seen_block_number: 0, // TODO: current latest block number
             },
         );
         assert!(old_account.is_none(), "designated address was already used");
