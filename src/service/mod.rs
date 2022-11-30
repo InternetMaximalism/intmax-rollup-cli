@@ -388,8 +388,11 @@ impl Config {
     }
 
     pub fn reset_server_state(&self) {
+        let body = "{}";
         let resp = reqwest::blocking::Client::new()
             .post(self.aggregator_api_url("/test/reset"))
+            .body(body)
+            .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
         if resp.status() != 200 {

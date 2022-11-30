@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use intmax_zkp_core::{
     sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
@@ -8,6 +8,7 @@ use intmax_zkp_core::{
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
 use serde::{Deserialize, Serialize};
 
+/// 受け取った token を merge key とともに保管する構造体
 /// `(token_kind, amount, merge_key)` の集合
 #[derive(Clone, Debug, Default)]
 #[repr(transparent)]
@@ -64,6 +65,21 @@ impl<F: RichField> Assets<F> {
 
     pub fn remove(&mut self, kind: TokenKind<F>) {
         self.0.retain(|asset| asset.0 != kind);
+    }
+
+    /// 各 token kind について所持している金額を算出する.
+    /// NOTICE: Assets は token を受け取った transaction ごとにバラバラに管理されている.
+    pub fn calc_total_amount(&self) -> HashMap<TokenKind<F>, u64> {
+        let mut total_amount_map = HashMap::new();
+        for asset in self.0.iter() {
+            if let Some(amount_list) = total_amount_map.get_mut(&asset.0) {
+                *amount_list += asset.1;
+            } else {
+                total_amount_map.insert(asset.0, asset.1);
+            }
+        }
+
+        total_amount_map
     }
 }
 

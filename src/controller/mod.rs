@@ -294,7 +294,16 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .get(&user_address)
                 .expect("user address was not found in wallet");
 
-            println!("{}", serde_json::to_string(&user_state.assets).unwrap());
+            let total_amount_map = user_state.assets.calc_total_amount();
+
+            let separator = "-----------------------------------------------------------------------------------------";
+            println!("{}", separator);
+            for (kind, total_amount) in total_amount_map {
+                println!("  Contract Address | 0x{}", kind.contract_address);
+                println!("  Token ID         | 0x{}", kind.variable_index);
+                println!("  Amount           | {}", total_amount);
+                println!("{}", separator);
+            }
         }
         SubCommand::Transaction { tx_command } => match tx_command {
             TransactionCommand::Merge { user_address } => {
