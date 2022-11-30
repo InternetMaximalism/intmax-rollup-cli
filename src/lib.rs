@@ -104,8 +104,7 @@ mod tests {
             .unwrap();
 
         // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
-        let merge_inclusion_proof1 =
-            get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
+        let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
 
         let deposit_nonce = WrappedHashOut::ZERO;
         let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());

@@ -10,8 +10,8 @@ use intmax_zkp_core::{
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
         goldilocks_poseidon::{
-            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
-            WrappedHashOut,
+            LayeredLayeredPoseidonSparseMerkleTree, LayeredPoseidonSparseMerkleTree,
+            NodeDataMemory, PoseidonSparseMerkleTree, WrappedHashOut,
         },
     },
     transaction::{
@@ -232,35 +232,60 @@ impl Config {
                 PoseidonHash::two_to_one(*deposit_proof1.value, get_block_hash(&block.header))
                     .into();
             dbg!(&deposit_tx_hash);
+            let merge_key = deposit_tx_hash;
 
             let diff_tree_inclusion_proof = (block.header, deposit_proof1, deposit_proof2);
 
             for found_deposit_info in user_deposits {
-                let merge_process_proof = user_state
+                let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
+                    user_state.asset_tree.nodes_db.clone(),
+                    Default::default(),
+                );
+                {
+                    user_state.assets.add(
+                        TokenKind {
+                            contract_address: found_deposit_info.contract_address,
+                            variable_index: found_deposit_info.variable_index.into(),
+                        },
+                        found_deposit_info.amount.to_canonical_u64(),
+                        merge_key,
+                    );
+                    inner_asset_tree
+                        .set(
+                            found_deposit_info.contract_address.0.into(),
+                            found_deposit_info.variable_index.into(),
+                            HashOut::from_partial(&[found_deposit_info.amount]).into(),
+                        )
+                        .unwrap();
+                }
+
+                let asset_root = inner_asset_tree.get_root();
+
+                let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
+                    user_state.asset_tree.nodes_db.clone(),
+                    user_state.asset_tree.get_root(),
+                );
+                let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
+                user_state
                     .asset_tree
-                    .set(
-                        deposit_tx_hash,
-                        found_deposit_info.contract_address.0.into(),
-                        found_deposit_info.variable_index.into(),
-                        HashOut::from_partial(&[found_deposit_info.amount]).into(),
+                    .change_root(asset_tree.get_root())
+                    .unwrap();
+                let amount = user_state
+                    .asset_tree
+                    .find(
+                        &merge_key,
+                        &found_deposit_info.contract_address.0.into(),
+                        &found_deposit_info.variable_index.into(),
                     )
                     .unwrap();
-
-                user_state.assets.add(
-                    TokenKind {
-                        contract_address: found_deposit_info.contract_address,
-                        variable_index: found_deposit_info.variable_index.into(),
-                    },
-                    found_deposit_info.amount.to_canonical_u64(),
-                    deposit_tx_hash,
-                );
+                assert_ne!(amount.2.value, WrappedHashOut::ZERO);
 
                 // deposit のときは nonce が 0
                 let deposit_nonce = Default::default();
                 let merge_proof = MergeProof {
                     is_deposit: true,
                     diff_tree_inclusion_proof: diff_tree_inclusion_proof.clone(),
-                    merge_process_proof: merge_process_proof.0,
+                    merge_process_proof,
                     latest_account_tree_inclusion_proof: SmtInclusionProof::with_root(
                         Default::default(),
                     ),
@@ -294,23 +319,44 @@ impl Config {
             // let pseudo_tx_hash = HashOut::ZERO;
             let tx_hash = witness.diff_tree_inclusion_proof.1.value;
             let asset_root = witness.diff_tree_inclusion_proof.2.value;
-            let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
-                user_state.asset_tree.nodes_db.clone(),
-                user_state.asset_tree.root,
-            );
 
             let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
             let merge_key = if witness.is_deposit {
-                PoseidonHash::two_to_one(*tx_hash, block_hash)
+                PoseidonHash::two_to_one(*tx_hash, block_hash).into()
             } else {
-                *tx_hash
+                tx_hash
             };
 
-            let merge_process_proof = asset_tree.set(merge_key.into(), asset_root).unwrap();
-
+            // witness.assets から asset_root が計算されることを検証する.
+            // ついでに user_state.asset_tree.nodes_db に contract_address 層と variable_index 層のノードを cache する
+            let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
+                user_state.asset_tree.nodes_db.clone(),
+                Default::default(),
+            );
             for asset in witness.assets {
-                user_state.assets.add(asset.kind, asset.amount, merge_key.into());
+                user_state.assets.add(asset.kind, asset.amount, merge_key);
+                inner_asset_tree
+                    .set(
+                        asset.kind.contract_address.to_hash_out().into(),
+                        asset.kind.variable_index,
+                        HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
+                    )
+                    .unwrap();
             }
+
+            // assert_eq!(inner_asset_tree.get_root(), asset_root);
+            dbg!(inner_asset_tree.get_root(), asset_root);
+
+            let mut asset_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::new(
+                user_state.asset_tree.nodes_db.clone(),
+                user_state.asset_tree.get_root(),
+            );
+            let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
+            dbg!(&merge_process_proof);
+            user_state
+                .asset_tree
+                .change_root(asset_tree.get_root())
+                .unwrap();
 
             let merge_proof = MergeProof {
                 is_deposit: witness.is_deposit,
@@ -403,10 +449,9 @@ impl Config {
 
         let mut purge_input_witness = vec![];
         let mut purge_output_witness = vec![];
-        let mut purge_output_inclusion_witnesses = HashMap::new();
-        let mut assets_list: HashMap<_, Vec<_>> = HashMap::new();
         let mut output_asset_map = HashMap::new();
         for (receiver_address, output_asset) in diffs {
+            dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
                     receiver_address.0.into(),
@@ -457,6 +502,16 @@ impl Config {
 
             // input に含めた asset を取り除く
             for input_asset in input_assets.0.iter() {
+                let rest_amount = user_state
+                    .asset_tree
+                    .find(
+                        &input_asset.2, // merge_key
+                        &input_asset.0.contract_address.0.into(),
+                        &input_asset.0.variable_index,
+                    )
+                    .unwrap();
+                // dbg!(&rest_amount);
+                assert_ne!(rest_amount.2.value, WrappedHashOut::ZERO);
                 let input_witness = user_state
                     .asset_tree
                     .set(
@@ -487,6 +542,8 @@ impl Config {
 
         // 宛先ごとに渡す asset を整理する
         let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory> = tx_diff_tree.into();
+        // key: receiver_address, value: (purge_output_inclusion_witness, assets)
+        let mut assets_map: HashMap<_, (_, Vec<_>)> = HashMap::new();
         for witness in purge_output_witness.iter() {
             let receiver_address = witness.0.new_key;
             let asset = Asset {
@@ -496,25 +553,27 @@ impl Config {
                 },
                 amount: witness.2.new_value.0.elements[0].to_canonical_u64(),
             };
-            if let Some(assets) = assets_list.get_mut(&receiver_address) {
+            if let Some((_, assets)) = assets_map.get_mut(&receiver_address) {
                 assets.push(asset);
             } else {
                 let proof = tx_diff_tree.find(&receiver_address).unwrap();
-                purge_output_inclusion_witnesses.insert(receiver_address, proof);
-                assets_list.insert(receiver_address, vec![asset]);
+                assets_map.insert(receiver_address, (proof, vec![asset]));
             }
         }
 
+        let mut purge_output_inclusion_witnesses = vec![];
+        let mut assets_list = vec![];
+        for (_, (purge_output_inclusion_witness, assets)) in assets_map {
+            purge_output_inclusion_witnesses.push(purge_output_inclusion_witness);
+            assets_list.push(assets);
+        }
         if broadcast {
             self.broadcast_transaction(
                 user_address,
                 transaction.tx_hash,
                 nonce,
-                purge_output_inclusion_witnesses
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                assets_list.values().cloned().collect::<Vec<_>>(),
+                purge_output_inclusion_witnesses,
+                assets_list,
             );
         }
 
