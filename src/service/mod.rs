@@ -420,28 +420,12 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(old_user_asset_root.to_string());
 
-        let (blocks, latest_block_number_deposit) = self.get_blocks(
+        let (merge_witnesses, latest_block_number) = self.get_merge_transaction_witness(
             user_address,
-            Some(user_state.last_seen_block_number_deposit),
+            Some(user_state.last_seen_block_number),
             None,
         );
-        // dbg!(&blocks.len());
-
-        let merge_witnesses_deposit = self.merge_deposits(blocks, user_address, user_state);
-        dbg!(&merge_witnesses_deposit.len(), latest_block_number_deposit);
-
-        let (merge_witnesses_received, latest_block_number_merge) = self
-            .get_merge_transaction_witness(
-                user_address,
-                Some(user_state.last_seen_block_number_merge),
-                None,
-            );
-        let mut merge_witnesses_received =
-            self.merge_received_asset(merge_witnesses_received, user_address, user_state);
-        dbg!(&merge_witnesses_received.len(), latest_block_number_merge);
-
-        let mut merge_witnesses = merge_witnesses_deposit;
-        merge_witnesses.append(&mut merge_witnesses_received);
+        let merge_witnesses = self.merge_received_asset(merge_witnesses, user_address, user_state);
 
         let _new_user_asset_root = user_state.asset_tree.get_root();
         // dbg!(new_user_asset_root.to_string());
@@ -584,8 +568,7 @@ impl Config {
         }
 
         user_state.insert_pending_transactions(&[transaction]);
-        user_state.last_seen_block_number_deposit = latest_block_number_deposit;
-        user_state.last_seen_block_number_merge = latest_block_number_merge;
+        user_state.last_seen_block_number = latest_block_number;
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
@@ -673,19 +656,13 @@ impl Config {
         resp.new_block
     }
 
-    pub fn get_blocks(
-        &self,
-        user_address: Address<F>,
-        since: Option<u32>,
-        until: Option<u32>,
-    ) -> (Vec<BlockInfo<F>>, u32) {
+    pub fn get_blocks(&self, since: Option<u32>, until: Option<u32>) -> (Vec<BlockInfo<F>>, u32) {
         // let query = RequestBlockQuery {
-        //     user_address,
         //     since,
         //     until,
         // };
 
-        let mut query = vec![("user_address", format!("0x{}", user_address))];
+        let mut query = vec![];
         if let Some(since) = since {
             query.push(("since", since.to_string()));
         }
@@ -707,31 +684,6 @@ impl Config {
             .expect("fail to parse JSON");
 
         (resp.blocks, resp.latest_block_number)
-    }
-
-    pub fn get_latest_account_tree_proof(
-        &self,
-        user_address: Address<F>,
-    ) -> (SmtInclusionProof<F>, u32) {
-        // let query = RequestAccountLatestBlockQuery {
-        //     user_address,
-        // };
-
-        let query = vec![("user_address", format!("0x{}", user_address))];
-
-        let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/account/latest-block"))
-            .query(&query);
-        let resp = request.send().expect("fail to fetch");
-        if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
-        }
-
-        let resp = resp
-            .json::<ResponseAccountLatestBlockQuery>()
-            .expect("fail to parse JSON");
-
-        (resp.proof, resp.latest_block_number)
     }
 
     pub fn sign_to_message(
