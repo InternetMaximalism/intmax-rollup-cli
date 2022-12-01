@@ -472,22 +472,23 @@ impl Config {
                 panic!("output asset amount is too much");
             }
 
-            let rest_asset = Asset {
-                kind,
-                amount: input_amount - output_amount,
-            };
-
             // input (所有している分) と output (人に渡す分) の差額を自身に渡す
-            let rest_witness = tx_diff_tree
-                .set(
-                    user_address.0.into(),
-                    rest_asset.kind.contract_address.0.into(),
-                    rest_asset.kind.variable_index,
-                    HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
-                )
-                .unwrap();
+            if input_amount > output_amount {
+                let rest_asset = Asset {
+                    kind,
+                    amount: input_amount - output_amount,
+                };
+                let rest_witness = tx_diff_tree
+                    .set(
+                        user_address.0.into(),
+                        rest_asset.kind.contract_address.0.into(),
+                        rest_asset.kind.variable_index,
+                        HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
+                    )
+                    .unwrap();
 
-            purge_output_witness.push(rest_witness);
+                purge_output_witness.push(rest_witness);
+            }
 
             // input に含めた asset を取り除く
             for input_asset in input_assets.0.iter() {
