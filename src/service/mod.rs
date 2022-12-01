@@ -180,7 +180,7 @@ impl Config {
             // dbg!(&sender1_tx_proof.public_inputs);
 
             match merge_and_purge_circuit.verify(user_tx_proof.clone()) {
-                Ok(()) => println!("Ok!"),
+                Ok(()) => {}
                 Err(x) => println!("{}", x),
             }
 
@@ -345,14 +345,14 @@ impl Config {
             }
 
             // assert_eq!(inner_asset_tree.get_root(), asset_root);
-            dbg!(inner_asset_tree.get_root().unwrap(), asset_root);
+            // dbg!(inner_asset_tree.get_root().unwrap(), asset_root);
 
             let mut asset_tree = PoseidonSparseMerkleTree::new(
                 user_state.asset_tree.nodes_db.clone(),
                 RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
             );
             let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
-            dbg!(&merge_process_proof);
+            // dbg!(&merge_process_proof);
             user_state
                 .asset_tree
                 .change_root(asset_tree.get_root().unwrap())
@@ -528,7 +528,7 @@ impl Config {
             nonce,
             old_user_asset_root,
         );
-        dbg!(transaction.diff_root);
+        // dbg!(transaction.diff_root);
 
         // 宛先ごとに渡す asset を整理する
         let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataTmp> =
@@ -657,6 +657,24 @@ impl Config {
         resp.new_block
     }
 
+    /// 最新の block を取得する.
+    pub fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
+        // let mut query = vec![];
+
+        let api_path = "/block/latest";
+        let resp = reqwest::blocking::Client::new()
+            .get(self.aggregator_api_url(api_path))
+            .send()?;
+        if resp.status() != 200 {
+            let error_message = resp.text()?;
+            anyhow::bail!("unexpected response from {}: {}", api_path, error_message);
+        }
+
+        let resp = resp.json::<ResponseLatestBlockQuery>()?;
+
+        Ok(resp.block)
+    }
+
     pub fn get_blocks(&self, since: Option<u32>, until: Option<u32>) -> (Vec<BlockInfo<F>>, u32) {
         // let query = RequestBlockQuery {
         //     since,
@@ -704,6 +722,11 @@ impl Config {
         let received_signature = simple_signature_circuit.prove(pw).unwrap();
         let end = start.elapsed();
         println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+        match simple_signature_circuit.verify(received_signature.clone()) {
+            Ok(()) => {}
+            Err(x) => println!("{}", x),
+        }
 
         received_signature
     }

@@ -65,6 +65,8 @@ enum SubCommand {
     Assets {
         #[structopt(long)]
         user_address: Option<String>,
+        #[structopt(long)]
+        verbose: bool,
     },
     /// Transaction
     #[structopt(name = "tx")]
@@ -82,14 +84,17 @@ enum SubCommand {
 
 #[derive(Debug, StructOpt)]
 enum ConfigCommand {
+    /// Set aggregator URL
     #[structopt(name = "aggregator-url")]
     AggregatorUrl { aggregator_url: Option<String> },
 }
 
 #[derive(Debug, StructOpt)]
 enum AccountCommand {
+    /// Initializing your wallet and delete your all accounts
     #[structopt(name = "reset")]
     Reset {},
+    /// Add your account
     #[structopt(name = "add")]
     Add {
         #[structopt(long)]
@@ -97,8 +102,10 @@ enum AccountCommand {
         #[structopt(long = "default")]
         is_default: bool,
     },
+    /// List your addresses
     #[structopt(name = "list")]
     List {},
+    /// Set default account
     #[structopt(name = "set-default")]
     SetDefault { user_address: Option<String> },
 }
@@ -223,6 +230,18 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     };
                     let account = Account::new(private_key);
                     wallet.add_account(account);
+                    let user_state = wallet
+                        .data
+                        .get_mut(&account.address)
+                        .expect("user address was not found in wallet");
+
+                    let latest_block = service
+                        .get_latest_block()
+                        .expect("fail to fetch latest block");
+                    dbg!(latest_block.header.block_number);
+                    let last_seen_block_number = latest_block.header.block_number;
+                    user_state.last_seen_block_number = last_seen_block_number;
+
                     println!("new account added: 0x{}", account.address);
 
                     if is_default {
@@ -286,13 +305,20 @@ pub fn invoke_command() -> anyhow::Result<()> {
             };
             service.deposit_assets(vec![deposit_info]);
         }
-        SubCommand::Assets { user_address } => {
+        SubCommand::Assets {
+            user_address,
+            verbose,
+        } => {
             let user_address =
                 parse_address(&wallet, user_address).expect("user address was not given");
             let user_state = wallet
                 .data
                 .get(&user_address)
                 .expect("user address was not found in wallet");
+
+            if verbose {
+                println!("{}", serde_json::to_string(&user_state.assets).unwrap());
+            }
 
             let total_amount_map = user_state.assets.calc_total_amount();
 
