@@ -6,7 +6,11 @@ use std::{
 
 use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
-    rollup::{block::BlockInfo, deposit::make_deposit_proof, gadgets::deposit_block::DepositInfo},
+    rollup::{
+        block::BlockInfo,
+        deposit::make_deposit_proof,
+        gadgets::deposit_block::{DepositInfo, VariableIndex},
+    },
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
         goldilocks_poseidon::{
@@ -188,7 +192,7 @@ impl Config {
         };
 
         let transaction = user_tx_proof.public_inputs.clone();
-        println!("transaction hash is 0x{}", transaction.diff_root);
+        println!("transaction hash is {}", transaction.diff_root);
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
@@ -245,7 +249,7 @@ impl Config {
                     user_state.assets.add(
                         TokenKind {
                             contract_address: found_deposit_info.contract_address,
-                            variable_index: found_deposit_info.variable_index.into(),
+                            variable_index: found_deposit_info.variable_index,
                         },
                         found_deposit_info.amount.to_canonical_u64(),
                         merge_key,
@@ -253,7 +257,7 @@ impl Config {
                     inner_asset_tree
                         .set(
                             found_deposit_info.contract_address.0.into(),
-                            found_deposit_info.variable_index.into(),
+                            found_deposit_info.variable_index.to_hash_out().into(),
                             HashOut::from_partial(&[found_deposit_info.amount]).into(),
                         )
                         .unwrap();
@@ -274,8 +278,8 @@ impl Config {
                     .asset_tree
                     .find(
                         &merge_key,
-                        &found_deposit_info.contract_address.0.into(),
-                        &found_deposit_info.variable_index.into(),
+                        &found_deposit_info.contract_address.to_hash_out().into(),
+                        &found_deposit_info.variable_index.to_hash_out().into(),
                     )
                     .unwrap();
                 assert_ne!(amount.2.value, WrappedHashOut::ZERO);
@@ -338,7 +342,7 @@ impl Config {
                 inner_asset_tree
                     .set(
                         asset.kind.contract_address.to_hash_out().into(),
-                        asset.kind.variable_index,
+                        asset.kind.variable_index.to_hash_out().into(),
                         HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
                     )
                     .unwrap();
@@ -443,9 +447,9 @@ impl Config {
             dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
-                    receiver_address.0.into(),
-                    output_asset.kind.contract_address.0.into(),
-                    output_asset.kind.variable_index,
+                    receiver_address.to_hash_out().into(),
+                    output_asset.kind.contract_address.to_hash_out().into(),
+                    output_asset.kind.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
                 )
                 .unwrap();
@@ -480,9 +484,9 @@ impl Config {
                 };
                 let rest_witness = tx_diff_tree
                     .set(
-                        user_address.0.into(),
-                        rest_asset.kind.contract_address.0.into(),
-                        rest_asset.kind.variable_index,
+                        user_address.to_hash_out().into(),
+                        rest_asset.kind.contract_address.to_hash_out().into(),
+                        rest_asset.kind.variable_index.to_hash_out().into(),
                         HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
                     )
                     .unwrap();
@@ -496,8 +500,8 @@ impl Config {
                     .asset_tree
                     .find(
                         &input_asset.2, // merge_key
-                        &input_asset.0.contract_address.0.into(),
-                        &input_asset.0.variable_index,
+                        &input_asset.0.contract_address.to_hash_out().into(),
+                        &input_asset.0.variable_index.to_hash_out().into(),
                     )
                     .unwrap();
                 // dbg!(&rest_amount);
@@ -506,8 +510,8 @@ impl Config {
                     .asset_tree
                     .set(
                         input_asset.2, // merge_key
-                        input_asset.0.contract_address.0.into(),
-                        input_asset.0.variable_index,
+                        input_asset.0.contract_address.to_hash_out().into(),
+                        input_asset.0.variable_index.to_hash_out().into(),
                         // HashOut::from_partial(&[F::from_canonical_u64(input_asset.1)]).into(),
                         HashOut::ZERO.into(),
                     )
@@ -540,7 +544,7 @@ impl Config {
             let asset = Asset {
                 kind: TokenKind {
                     contract_address: Address(*witness.1.new_key),
-                    variable_index: witness.2.new_key,
+                    variable_index: VariableIndex::from_hash_out(*witness.2.new_key),
                 },
                 amount: witness.2.new_value.0.elements[0].to_canonical_u64(),
             };
@@ -737,8 +741,8 @@ impl Config {
         tx_hash: WrappedHashOut<F>,
     ) -> SmtInclusionProof<F> {
         let query = vec![
-            ("user_address", format!("0x{}", user_address)),
-            ("tx_hash", format!("0x{}", tx_hash)),
+            ("user_address", format!("{}", user_address)),
+            ("tx_hash", format!("{}", tx_hash)),
         ];
 
         let request = reqwest::blocking::Client::new()
@@ -795,7 +799,7 @@ impl Config {
         since: Option<u32>,
         until: Option<u32>,
     ) -> (Vec<ReceivedAssetProof<F>>, u32) {
-        let mut query = vec![("user_address", format!("0x{}", user_address))];
+        let mut query = vec![("user_address", format!("{}", user_address))];
         if let Some(since) = since {
             query.push(("since", format!("{}", since)));
         }

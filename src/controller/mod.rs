@@ -1,18 +1,16 @@
 use std::{
     fs::{create_dir, File},
     io::{Read, Write},
-    str::FromStr,
 };
 
 use intmax_zkp_core::{
-    rollup::gadgets::deposit_block::DepositInfo,
-    sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+    rollup::gadgets::deposit_block::{DepositInfo, VariableIndex},
+    sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
     transaction::asset::{Asset, TokenKind},
     zkdsa::account::{Account, Address},
 };
 use plonky2::{
-    field::types::{Field, Sample},
-    hash::hash_types::HashOut,
+    field::types::Field,
     plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
 };
 use structopt::StructOpt;
@@ -29,6 +27,7 @@ type F = <C as GenericConfig<D>>::F;
 const DEFAULT_AGGREGATOR_URL: &str = "http://localhost:8080";
 
 #[derive(Debug, StructOpt)]
+#[structopt(name = "intmax")]
 struct Cli {
     #[structopt(subcommand)]
     pub sub_command: SubCommand,
@@ -52,11 +51,12 @@ enum SubCommand {
     #[structopt(name = "deposit")]
     Deposit {
         #[structopt(long)]
-        user_address: Option<String>,
-        #[structopt(long)]
-        contract_address: String,
+        user_address: Option<Address<F>>,
+        // #[structopt(long)]
+        // contract_address: Address<F>,
+        /// the token id can be selected 0x00 - 0xff
         #[structopt(long = "token-id", short = "i")]
-        variable_index: String,
+        token_id: VariableIndex<F>,
         #[structopt(long)]
         amount: u64,
     },
@@ -64,7 +64,7 @@ enum SubCommand {
     #[structopt(name = "assets")]
     Assets {
         #[structopt(long)]
-        user_address: Option<String>,
+        user_address: Option<Address<F>>,
         #[structopt(long)]
         verbose: bool,
     },
@@ -98,7 +98,7 @@ enum AccountCommand {
     #[structopt(name = "add")]
     Add {
         #[structopt(long)]
-        private_key: Option<String>,
+        private_key: Option<WrappedHashOut<F>>,
         #[structopt(long = "default")]
         is_default: bool,
     },
@@ -107,7 +107,7 @@ enum AccountCommand {
     List {},
     /// Set default account
     #[structopt(name = "set-default")]
-    SetDefault { user_address: Option<String> },
+    SetDefault { user_address: Option<Address<F>> },
 }
 
 #[derive(Debug, StructOpt)]
@@ -116,13 +116,14 @@ enum TransactionCommand {
     #[structopt(name = "send")]
     Send {
         #[structopt(long)]
-        user_address: Option<String>,
+        user_address: Option<Address<F>>,
         #[structopt(long)]
-        receiver_address: String,
+        receiver_address: Address<F>,
         #[structopt(long)]
-        contract_address: String,
+        contract_address: Option<Address<F>>,
+        /// the token id can be selected 0x00 - 0xff
         #[structopt(long = "token-id", short = "i")]
-        variable_index: String,
+        token_id: VariableIndex<F>,
         #[structopt(long)]
         amount: u64,
         // #[structopt(long)]
@@ -132,7 +133,7 @@ enum TransactionCommand {
     #[structopt(name = "merge")]
     Merge {
         #[structopt(long)]
-        user_address: Option<String>,
+        user_address: Option<Address<F>>,
     },
     // #[structopt(name = "multi-send")]
     // MultiSend {}
@@ -150,7 +151,7 @@ enum BlockCommand {
     #[structopt(name = "sign")]
     Sign {
         #[structopt(long)]
-        user_address: Option<String>,
+        user_address: Option<Address<F>>,
     },
     /// Trigger to approve a block.
     #[structopt(name = "approve")]
@@ -159,10 +160,10 @@ enum BlockCommand {
 
 pub fn parse_address<W: Wallet>(
     wallet: &W,
-    user_address: Option<String>,
+    user_address: Option<Address<F>>,
 ) -> anyhow::Result<Address<F>> {
     if let Some(user_address) = user_address {
-        Ok(Address::from_str(&user_address[2..]).expect("fail to parse user address"))
+        Ok(user_address)
     } else if let Some(user_address) = wallet.get_default_account() {
         Ok(user_address)
     } else {
@@ -215,75 +216,68 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 service.set_aggregator_url(aggregator_url);
             }
         },
-        SubCommand::Account { account_command } => {
-            match account_command {
-                AccountCommand::Reset {} => {}
-                AccountCommand::Add {
-                    private_key,
-                    is_default,
-                } => {
-                    let private_key = if let Some(private_key) = private_key {
-                        *GoldilocksHashOut::from_str(&private_key[2..])
-                            .expect("fail to parse user address")
-                    } else {
-                        HashOut::rand()
-                    };
-                    let account = Account::new(private_key);
-                    wallet.add_account(account);
-                    let user_state = wallet
-                        .data
-                        .get_mut(&account.address)
-                        .expect("user address was not found in wallet");
+        SubCommand::Account { account_command } => match account_command {
+            AccountCommand::Reset {} => {}
+            AccountCommand::Add {
+                private_key,
+                is_default,
+            } => {
+                let private_key = private_key
+                    // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
+                    .unwrap_or_else(WrappedHashOut::rand);
+                let account = Account::new(*private_key);
+                wallet.add_account(account);
+                let user_state = wallet
+                    .data
+                    .get_mut(&account.address)
+                    .expect("user address was not found in wallet");
 
-                    let latest_block = service
-                        .get_latest_block()
-                        .expect("fail to fetch latest block");
-                    dbg!(latest_block.header.block_number);
-                    let last_seen_block_number = latest_block.header.block_number;
-                    user_state.last_seen_block_number = last_seen_block_number;
+                let latest_block = service
+                    .get_latest_block()
+                    .expect("fail to fetch latest block");
+                // dbg!(latest_block.header.block_number);
+                let last_seen_block_number = latest_block.header.block_number;
+                user_state.last_seen_block_number = last_seen_block_number;
 
-                    println!("new account added: 0x{}", account.address);
+                println!("new account added: {}", account.address);
 
-                    if is_default {
-                        wallet.set_default_account(Some(account.address));
-                        println!("set above account as default");
-                    }
-                }
-                AccountCommand::List {} => {
-                    let account_list = wallet.data.keys();
-
-                    let mut is_empty = true;
-                    for address in account_list {
-                        is_empty = false;
-
-                        if Some(*address) == wallet.get_default_account() {
-                            println!("0x{} (default)", address);
-                        } else {
-                            println!("0x{}", address);
-                        }
-                    }
-
-                    if is_empty {
-                        println!("No accounts is in your wallet. Please execute `account add --default`.");
-                    }
-                }
-                AccountCommand::SetDefault { user_address } => {
-                    if let Some(user_address) = user_address {
-                        let user_address = Address::from_str(&user_address[2..])
-                            .expect("fail to parse user address");
-                        wallet.set_default_account(Some(user_address));
-                        println!("set default account: 0x{}", user_address);
-                    } else {
-                        wallet.set_default_account(None);
-                        println!("set default account: null");
-                    }
+                if is_default {
+                    wallet.set_default_account(Some(account.address));
+                    println!("set above account as default");
                 }
             }
-        }
+            AccountCommand::List {} => {
+                let account_list = wallet.data.keys();
+
+                let mut is_empty = true;
+                for address in account_list {
+                    is_empty = false;
+
+                    if Some(*address) == wallet.get_default_account() {
+                        println!("{} (default)", address);
+                    } else {
+                        println!("{}", address);
+                    }
+                }
+
+                if is_empty {
+                    println!(
+                        "No accounts is in your wallet. Please execute `account add --default`."
+                    );
+                }
+            }
+            AccountCommand::SetDefault { user_address } => {
+                wallet.set_default_account(user_address);
+                if let Some(user_address) = user_address {
+                    println!("set default account: {}", user_address);
+                } else {
+                    println!("set default account: null");
+                }
+            }
+        },
         SubCommand::Deposit {
             user_address,
-            contract_address,
-            variable_index,
+            token_id: variable_index,
             amount,
         } => {
             let user_address =
@@ -293,14 +287,14 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .get(&user_address)
                 .expect("user address was not found in wallet");
 
-            // let mut decoded_contract_address = hex::decode(contract_address).unwrap();
-            // decoded_contract_address.reverse();
-            // decoded_contract_address.resize(32, 0);
-            // decoded_contract_address.reverse();
+            // receiver_address と同じ contract_address をもつトークンしか mint できない
+            let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
+
+            // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
             let deposit_info = DepositInfo {
                 receiver_address: user_address,
-                contract_address: Address::from_str(&contract_address[2..]).unwrap(),
-                variable_index: GoldilocksHashOut::from_str(&variable_index[2..]).unwrap().0,
+                contract_address,
+                variable_index,
                 amount: F::from_canonical_u64(amount),
             };
             service.deposit_assets(vec![deposit_info]);
@@ -323,14 +317,15 @@ pub fn invoke_command() -> anyhow::Result<()> {
             let total_amount_map = user_state.assets.calc_total_amount();
 
             let separator = "-----------------------------------------------------------------------------------------";
+            println!("User: {}", user_address);
             println!("{}", separator);
             if total_amount_map.is_empty() {
                 println!("  No assets held");
                 println!("{}", separator);
             } else {
                 for (kind, total_amount) in total_amount_map {
-                    println!("  Contract Address | 0x{}", kind.contract_address);
-                    println!("  Token ID         | 0x{}", kind.variable_index);
+                    println!("  Contract Address | {}", kind.contract_address);
+                    println!("  Token ID         | {}", kind.variable_index);
                     println!("  Amount           | {}", total_amount);
                     println!("{}", separator);
                 }
@@ -351,7 +346,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 user_address,
                 receiver_address,
                 contract_address,
-                variable_index,
+                token_id: variable_index,
                 amount,
             } => {
                 let user_address =
@@ -361,15 +356,18 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
 
-                let receiver_address = Address::from_str(&receiver_address[2..]).unwrap();
+                // let receiver_address = Address::from_str(&receiver_address).unwrap();
                 if user_address == receiver_address {
                     anyhow::bail!("cannot send asset to myself");
                 }
 
+                // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
                 let output_asset = Asset {
                     kind: TokenKind {
-                        contract_address: Address::from_str(&contract_address[2..]).unwrap(),
-                        variable_index: GoldilocksHashOut::from_str(&variable_index[2..]).unwrap(),
+                        contract_address: contract_address
+                            // .map(|v| Address::from_str(&v).unwrap())
+                            .unwrap_or(user_address),
+                        variable_index,
                     },
                     amount,
                 };
