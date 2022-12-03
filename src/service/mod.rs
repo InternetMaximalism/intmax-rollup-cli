@@ -444,7 +444,7 @@ impl Config {
         let mut purge_output_witness = vec![];
         let mut output_asset_map = HashMap::new();
         for (receiver_address, output_asset) in diffs {
-            dbg!(receiver_address.to_string(), output_asset);
+            // dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
                     receiver_address.to_hash_out().into(),

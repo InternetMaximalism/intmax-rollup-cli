@@ -141,9 +141,6 @@ enum TransactionCommand {
 
 #[derive(Debug, StructOpt)]
 enum BlockCommand {
-    /// Reset ALL server state.
-    #[structopt(name = "reset")]
-    Reset {},
     /// Trigger to propose a block.
     #[structopt(name = "propose")]
     Propose {},
@@ -381,9 +378,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
             }
         },
         SubCommand::Block { block_command } => match block_command {
-            BlockCommand::Reset {} => {
-                service.reset_server_state();
-            }
+            // BlockCommand::Reset {} => {
+            //     service.reset_server_state();
+            // }
             BlockCommand::Propose {} => {
                 service.trigger_propose_block();
             }

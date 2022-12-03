@@ -12,19 +12,24 @@ alias intmax='./target/release/intmax-client'
 intmax config aggregator-url https://prealpha.testnet.intmax.io/
 ```
 
-## How to use
+## Getting Started
+
+### Create your account
 
 ```sh
 intmax account reset # Initializing your wallet and delete your all accounts
 intmax account add --default # Add default account (private key is selected randomly)
-intmax account add --private-key 0x01 # Add account with address: 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 ```
+
+### Mint your token
 
 ```sh
 intmax deposit --amount 10 -i 0x00 # Deposit your assets (the token contract address is the same with your address and the token id can be selected 0x00 - 0xff)
 intmax block propose # aggregator's operation
 intmax block approve # aggregator's operation
 ```
+
+### Send your assets
 
 ```sh
 intmax tx send --amount 1 -i 0x00 --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d # Merge your assets and Send your token to other accounts
@@ -33,6 +38,8 @@ intmax block sign # Sign to proposed block (called received signature)
 intmax block approve # aggregator's operation
 ```
 
+### Reflect the results of the remittance
+
 ```sh
 intmax tx merge # Merge your assets
 intmax block propose # aggregator's operation
@@ -40,18 +47,8 @@ intmax block sign
 intmax block approve # aggregator's operation
 ```
 
-```sh
-intmax assets # Display your owned assets (excluding pre-merge)
-```
+### Display your assets
 
 ```sh
-intmax account set-default 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d # Change default account
-```
-
-```sh
-intmax tx merge
-intmax block propose # aggregator's operation
-intmax block sign
-intmax block approve # aggregator's operation
-intmax assets
+intmax assets # Display your owned assets
 ```
