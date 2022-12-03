@@ -59,7 +59,7 @@ mod tests {
             DepositInfo {
                 receiver_address: sender1_account.address,
                 contract_address: Address(*GoldilocksHashOut::from_u128(1)),
-                variable_index: *GoldilocksHashOut::from_u128(0),
+                variable_index: 0u8.into(),
                 amount: F::from_canonical_u64(10),
             },
             // DepositInfo {
@@ -85,7 +85,7 @@ mod tests {
                 .set(
                     deposit_info.receiver_address.to_hash_out().into(),
                     deposit_info.contract_address.to_hash_out().into(),
-                    deposit_info.variable_index.into(),
+                    deposit_info.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[deposit_info.amount]).into(),
                 )
                 .unwrap();
@@ -113,8 +113,8 @@ mod tests {
         for deposit_info in deposit_list.clone() {
             sender1_inner_user_asset_tree
                 .set(
-                    deposit_info.contract_address.0.into(),
-                    deposit_info.variable_index.into(),
+                    deposit_info.contract_address.to_hash_out().into(),
+                    deposit_info.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[deposit_info.amount]).into(),
                 )
                 .unwrap();
@@ -162,8 +162,8 @@ mod tests {
         let proof1 = sender1_user_asset_tree
             .set(
                 deposit_tx_hash.into(),
-                deposit_list[0].contract_address.0.into(),
-                deposit_list[0].variable_index.into(),
+                deposit_list[0].contract_address.to_hash_out().into(),
+                deposit_list[0].variable_index.to_hash_out().into(),
                 zero,
             )
             .unwrap();
@@ -183,14 +183,14 @@ mod tests {
 
         let key3 = (
             sender2_account.address.to_hash_out().into(),
-            deposit_list[0].contract_address.0.into(),
-            deposit_list[0].variable_index.into(),
+            deposit_list[0].contract_address.to_hash_out().into(),
+            deposit_list[0].variable_index.to_hash_out().into(),
         );
         let value3 = GoldilocksHashOut::from_u128(2);
         let key4 = (
             sender1_account.address.to_hash_out().into(),
-            deposit_list[0].contract_address.0.into(),
-            deposit_list[0].variable_index.into(),
+            deposit_list[0].contract_address.to_hash_out().into(),
+            deposit_list[0].variable_index.to_hash_out().into(),
         );
         let value4 = GoldilocksHashOut::from_u128(8);
 
