@@ -6,6 +6,7 @@ use std::{
 
 use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
+    merkle_tree::tree::MerkleProof,
     rollup::{
         block::BlockInfo,
         deposit::make_deposit_proof,
@@ -25,7 +26,7 @@ use intmax_zkp_core::{
         gadgets::merge::MergeProof,
     },
     zkdsa::{
-        account::{Account, Address},
+        account::{Account, Address, PublicKey},
         circuits::{make_simple_signature_circuit, SimpleSignatureProofWithPublicInputs},
     },
 };
@@ -110,6 +111,30 @@ impl Config {
         } else {
             println!("The aggregator URL is {}", self.aggregator_api_url(""));
         }
+    }
+
+    pub fn register_account(&self, public_key: PublicKey<F>) -> Address<F> {
+        let payload = RequestAccountRegisterBody {
+            public_key: public_key.into(),
+        };
+        let body = serde_json::to_string(&payload).expect("fail to encode");
+        let resp = reqwest::blocking::Client::new()
+            .post(self.aggregator_api_url("/account/register"))
+            .body(body)
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .expect("fail to post");
+        if resp.status() != 200 {
+            panic!("{}", resp.text().unwrap());
+        }
+
+        let resp = resp
+            .json::<ResponseAccountRegisterBody>()
+            .expect("fail to parse JSON");
+
+        println!("register successfully");
+
+        resp.address
     }
 
     /// test function
@@ -735,11 +760,27 @@ impl Config {
         received_signature
     }
 
+    pub fn sign_proposed_block(
+        &self,
+        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
+        user_address: Address<F>,
+    ) {
+        let pending_transactions = user_state.get_pending_transaction_hashes();
+
+        for tx_hash in pending_transactions {
+            let tx_inclusion_proof = self.get_transaction_inclusion_witness(user_address, tx_hash);
+            let block_hash = tx_inclusion_proof.root;
+            let received_signature = self.sign_to_message(user_state.account, *block_hash);
+            self.send_received_signature(received_signature, tx_hash);
+            user_state.remove_pending_transactions(tx_hash);
+        }
+    }
+
     pub fn get_transaction_inclusion_witness(
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
-    ) -> SmtInclusionProof<F> {
+    ) -> MerkleProof<F> {
         let query = vec![
             ("user_address", format!("{}", user_address)),
             ("tx_hash", format!("{}", tx_hash)),
