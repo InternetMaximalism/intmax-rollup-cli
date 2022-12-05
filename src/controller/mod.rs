@@ -54,9 +54,10 @@ enum SubCommand {
         user_address: Option<Address<F>>,
         // #[structopt(long)]
         // contract_address: Address<F>,
-        /// the token id can be selected 0x00 - 0xff
+        /// `token-id` can be selected 0x00 - 0xff.
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
+        /// `amount` must be a positive integer less than 2^56.
         #[structopt(long)]
         amount: u64,
     },
@@ -124,6 +125,7 @@ enum TransactionCommand {
         /// the token id can be selected 0x00 - 0xff
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
+        /// `amount` must be a positive integer less than 2^56.
         #[structopt(long)]
         amount: u64,
         // #[structopt(long)]
@@ -291,6 +293,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // receiver_address と同じ contract_address をもつトークンしか mint できない
             let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
 
+            if amount == 0 || amount >= 1u64 << 56 {
+                anyhow::bail!("`amount` must be a positive integer less than 2^56");
+            }
+
             // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
             let deposit_info = DepositInfo {
                 receiver_address: user_address,
@@ -367,6 +373,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 // let receiver_address = Address::from_str(&receiver_address).unwrap();
                 if user_address == receiver_address {
                     anyhow::bail!("cannot send asset to myself");
+                }
+
+                if amount == 0 || amount >= 1u64 << 56 {
+                    anyhow::bail!("`amount` must be a positive integer less than 2^56");
                 }
 
                 // let variable_index = VariableIndex::from_str(&variable_index).unwrap();

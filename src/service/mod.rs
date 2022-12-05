@@ -217,7 +217,7 @@ impl Config {
         };
 
         let transaction = user_tx_proof.public_inputs.clone();
-        println!("transaction hash is {}", transaction.diff_root);
+        println!("transaction hash is {}", transaction.tx_hash);
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
