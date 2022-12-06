@@ -54,9 +54,10 @@ enum SubCommand {
         user_address: Option<Address<F>>,
         // #[structopt(long)]
         // contract_address: Address<F>,
-        /// the token id can be selected 0x00 - 0xff
+        /// `token-id` can be selected 0x00 - 0xff.
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
+        /// `amount` must be a positive integer less than 2^56.
         #[structopt(long)]
         amount: u64,
     },
@@ -124,6 +125,7 @@ enum TransactionCommand {
         /// the token id can be selected 0x00 - 0xff
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
+        /// `amount` must be a positive integer less than 2^56.
         #[structopt(long)]
         amount: u64,
         // #[structopt(long)]
@@ -141,18 +143,18 @@ enum TransactionCommand {
 
 #[derive(Debug, StructOpt)]
 enum BlockCommand {
-    /// Trigger to propose a block.
-    #[structopt(name = "propose")]
-    Propose {},
+    // /// Trigger to propose a block.
+    // #[structopt(name = "propose")]
+    // Propose {},
     /// Sign the diff.
     #[structopt(name = "sign")]
     Sign {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
-    /// Trigger to approve a block.
-    #[structopt(name = "approve")]
-    Approve {},
+    // /// Trigger to approve a block.
+    // #[structopt(name = "approve")]
+    // Approve {},
 }
 
 pub fn parse_address<W: Wallet>(
@@ -223,6 +225,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
                     .unwrap_or_else(WrappedHashOut::rand);
                 let account = Account::new(*private_key);
+                service.register_account(account.public_key);
                 wallet.add_account(account);
                 let user_state = wallet
                     .data
@@ -242,6 +245,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     wallet.set_default_account(Some(account.address));
                     println!("set above account as default");
                 }
+
+                service.trigger_propose_block();
+                service.trigger_approve_block();
             }
             AccountCommand::List {} => {
                 let account_list = wallet.data.keys();
@@ -287,6 +293,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // receiver_address と同じ contract_address をもつトークンしか mint できない
             let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
 
+            if amount == 0 || amount >= 1u64 << 56 {
+                anyhow::bail!("`amount` must be a positive integer less than 2^56");
+            }
+
             // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
             let deposit_info = DepositInfo {
                 receiver_address: user_address,
@@ -295,6 +305,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 amount: F::from_canonical_u64(amount),
             };
             service.deposit_assets(vec![deposit_info]);
+
+            service.trigger_propose_block();
+            service.trigger_approve_block();
         }
         SubCommand::Assets {
             user_address,
@@ -338,6 +351,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .expect("user address was not found in wallet");
 
                 service.merge_and_purge_asset(user_state, user_address, &[], false);
+
+                service.trigger_propose_block();
+                service.sign_proposed_block(user_state, user_address);
+                service.trigger_approve_block();
             }
             TransactionCommand::Send {
                 user_address,
@@ -358,6 +375,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     anyhow::bail!("cannot send asset to myself");
                 }
 
+                if amount == 0 || amount >= 1u64 << 56 {
+                    anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                }
+
                 // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
                 let output_asset = Asset {
                     kind: TokenKind {
@@ -375,15 +396,19 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     &[(receiver_address, output_asset)],
                     true,
                 );
+
+                service.trigger_propose_block();
+                service.sign_proposed_block(user_state, user_address);
+                service.trigger_approve_block();
             }
         },
         SubCommand::Block { block_command } => match block_command {
             // BlockCommand::Reset {} => {
             //     service.reset_server_state();
             // }
-            BlockCommand::Propose {} => {
-                service.trigger_propose_block();
-            }
+            // BlockCommand::Propose {} => {
+            //     service.trigger_propose_block();
+            // }
             BlockCommand::Sign { user_address } => {
                 println!("block sign");
                 let user_address =
@@ -392,21 +417,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .data
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
-                let pending_transactions = user_state.get_pending_transaction_hashes();
-
-                for tx_hash in pending_transactions {
-                    let tx_inclusion_proof =
-                        service.get_transaction_inclusion_witness(user_address, tx_hash);
-                    let block_hash = tx_inclusion_proof.root;
-                    let received_signature =
-                        service.sign_to_message(user_state.account, *block_hash);
-                    service.send_received_signature(received_signature, tx_hash);
-                    user_state.remove_pending_transactions(tx_hash);
-                }
-            }
-            BlockCommand::Approve {} => {
-                service.trigger_approve_block();
-            }
+                service.sign_proposed_block(user_state, user_address);
+            } // BlockCommand::Approve {} => {
+              //     service.trigger_approve_block();
+              // }
         },
     }
 
