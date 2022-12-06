@@ -460,7 +460,6 @@ impl Config {
             added_merge_witnesses,
             N_MERGES,
         );
-        dbg!(serde_json::to_string(&merge_witnesses).unwrap());
 
         let _new_user_asset_root = user_state.asset_tree.get_root();
         // dbg!(new_user_asset_root.to_string());
