@@ -75,12 +75,12 @@ enum SubCommand {
         #[structopt(subcommand)]
         tx_command: TransactionCommand,
     },
-    /// Block
-    #[structopt(name = "block")]
-    Block {
-        #[structopt(subcommand)]
-        block_command: BlockCommand,
-    },
+    // /// Block
+    // #[structopt(name = "block")]
+    // Block {
+    //     #[structopt(subcommand)]
+    //     block_command: BlockCommand,
+    // },
 }
 
 #[derive(Debug, StructOpt)]
@@ -141,21 +141,21 @@ enum TransactionCommand {
     // MultiSend {}
 }
 
-#[derive(Debug, StructOpt)]
-enum BlockCommand {
-    // /// Trigger to propose a block.
-    // #[structopt(name = "propose")]
-    // Propose {},
-    /// Sign the diff.
-    #[structopt(name = "sign")]
-    Sign {
-        #[structopt(long)]
-        user_address: Option<Address<F>>,
-    },
-    // /// Trigger to approve a block.
-    // #[structopt(name = "approve")]
-    // Approve {},
-}
+// #[derive(Debug, StructOpt)]
+// enum BlockCommand {
+//     /// Trigger to propose a block.
+//     #[structopt(name = "propose")]
+//     Propose {},
+//     /// Sign the diff.
+//     #[structopt(name = "sign")]
+//     Sign {
+//         #[structopt(long)]
+//         user_address: Option<Address<F>>,
+//     },
+//     /// Trigger to approve a block.
+//     #[structopt(name = "approve")]
+//     Approve {},
+// }
 
 pub fn parse_address<W: Wallet>(
     wallet: &W,
@@ -402,26 +402,24 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 service.trigger_approve_block();
             }
         },
-        SubCommand::Block { block_command } => match block_command {
-            // BlockCommand::Reset {} => {
-            //     service.reset_server_state();
-            // }
-            // BlockCommand::Propose {} => {
-            //     service.trigger_propose_block();
-            // }
-            BlockCommand::Sign { user_address } => {
-                println!("block sign");
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
-                let user_state = wallet
-                    .data
-                    .get_mut(&user_address)
-                    .expect("user address was not found in wallet");
-                service.sign_proposed_block(user_state, user_address);
-            } // BlockCommand::Approve {} => {
-              //     service.trigger_approve_block();
-              // }
-        },
+        // SubCommand::Block { block_command } => match block_command {
+        //     BlockCommand::Propose {} => {
+        //         service.trigger_propose_block();
+        //     }
+        //     BlockCommand::Sign { user_address } => {
+        //         println!("block sign");
+        //         let user_address =
+        //             parse_address(&wallet, user_address).expect("user address was not given");
+        //         let user_state = wallet
+        //             .data
+        //             .get_mut(&user_address)
+        //             .expect("user address was not found in wallet");
+        //         service.sign_proposed_block(user_state, user_address);
+        //     }
+        //     BlockCommand::Approve {} => {
+        //         service.trigger_approve_block();
+        //     }
+        // },
     }
 
     let encoded_wallet = serde_json::to_string(&wallet).unwrap();

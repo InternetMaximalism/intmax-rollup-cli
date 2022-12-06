@@ -9,7 +9,7 @@ use intmax_zkp_core::{
         node_data::{Node, NodeData},
         root_data::RootData,
     },
-    transaction::circuits::MergeAndPurgeTransitionPublicInputs,
+    transaction::{circuits::MergeAndPurgeTransitionPublicInputs, gadgets::merge::MergeProof},
     zkdsa::account::{Account, Address},
 };
 use plonky2::field::goldilocks_field::GoldilocksField;
@@ -29,6 +29,7 @@ pub struct UserState<
     pub assets: Assets<F>,
     pub last_seen_block_number: u32,
     pub transactions: HashMap<WrappedHashOut<F>, MergeAndPurgeTransitionPublicInputs<F>>,
+    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -45,6 +46,8 @@ pub struct SerializableUserState {
     pub last_seen_block_number: u32,
     #[serde(default)]
     pub transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>, // pending_transactions
+    #[serde(default)]
+    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
 }
 
 impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
@@ -68,6 +71,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             assets: value.assets,
             last_seen_block_number: value.last_seen_block_number,
             transactions,
+            rest_merge_witnesses: value.rest_merge_witnesses,
         }
     }
 }
@@ -100,6 +104,7 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             assets: value.assets,
             transactions,
             last_seen_block_number: value.last_seen_block_number,
+            rest_merge_witnesses: value.rest_merge_witnesses,
         }
     }
 }
@@ -215,6 +220,7 @@ impl Wallet for WalletOnMemory {
                 assets: Default::default(),
                 transactions: Default::default(),
                 last_seen_block_number: 0, // TODO: current latest block number
+                rest_merge_witnesses: Default::default(),
             },
         );
         assert!(old_account.is_none(), "designated address was already used");

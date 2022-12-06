@@ -9,7 +9,6 @@ use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
         block::BlockInfo,
-        deposit::make_deposit_proof,
         gadgets::deposit_block::{DepositInfo, VariableIndex},
     },
     sparse_merkle_tree::{
@@ -240,92 +239,92 @@ impl Config {
         transaction
     }
 
-    pub fn merge_deposits(
-        &self,
-        blocks: Vec<BlockInfo<F>>,
-        user_address: Address<F>,
-        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
-    ) -> Vec<MergeProof<F>> {
-        let mut merge_witnesses = vec![];
-        for block in blocks {
-            let user_deposits = block
-                .deposit_list
-                .iter()
-                .filter(|leaf| leaf.receiver_address == user_address)
-                .collect::<Vec<_>>();
-            let (deposit_proof1, deposit_proof2) =
-                make_deposit_proof(&block.deposit_list, user_address, N_LOG_TXS);
-            dbg!(&deposit_proof1.root, deposit_proof1.value);
+    // pub fn merge_deposits(
+    //     &self,
+    //     blocks: Vec<BlockInfo<F>>,
+    //     user_address: Address<F>,
+    //     user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
+    // ) -> Vec<MergeProof<F>> {
+    //     let mut merge_witnesses = vec![];
+    //     for block in blocks {
+    //         let user_deposits = block
+    //             .deposit_list
+    //             .iter()
+    //             .filter(|leaf| leaf.receiver_address == user_address)
+    //             .collect::<Vec<_>>();
+    //         let (deposit_proof1, deposit_proof2) =
+    //             make_deposit_proof(&block.deposit_list, user_address, N_LOG_TXS);
+    //         dbg!(&deposit_proof1.root, deposit_proof1.value);
 
-            let deposit_tx_hash =
-                PoseidonHash::two_to_one(*deposit_proof1.value, get_block_hash(&block.header))
-                    .into();
-            dbg!(&deposit_tx_hash);
-            let merge_key = deposit_tx_hash;
+    //         let deposit_tx_hash =
+    //             PoseidonHash::two_to_one(*deposit_proof1.value, get_block_hash(&block.header))
+    //                 .into();
+    //         dbg!(&deposit_tx_hash);
+    //         let merge_key = deposit_tx_hash;
 
-            let diff_tree_inclusion_proof = (block.header, deposit_proof1, deposit_proof2);
+    //         let diff_tree_inclusion_proof = (block.header, deposit_proof1, deposit_proof2);
 
-            for found_deposit_info in user_deposits {
-                let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    RootDataTmp::default(),
-                );
-                {
-                    user_state.assets.add(
-                        TokenKind {
-                            contract_address: found_deposit_info.contract_address,
-                            variable_index: found_deposit_info.variable_index,
-                        },
-                        found_deposit_info.amount.to_canonical_u64(),
-                        merge_key,
-                    );
-                    inner_asset_tree
-                        .set(
-                            found_deposit_info.contract_address.0.into(),
-                            found_deposit_info.variable_index.to_hash_out().into(),
-                            HashOut::from_partial(&[found_deposit_info.amount]).into(),
-                        )
-                        .unwrap();
-                }
+    //         for found_deposit_info in user_deposits {
+    //             let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
+    //                 user_state.asset_tree.nodes_db.clone(),
+    //                 RootDataTmp::default(),
+    //             );
+    //             {
+    //                 user_state.assets.add(
+    //                     TokenKind {
+    //                         contract_address: found_deposit_info.contract_address,
+    //                         variable_index: found_deposit_info.variable_index,
+    //                     },
+    //                     found_deposit_info.amount.to_canonical_u64(),
+    //                     merge_key,
+    //                 );
+    //                 inner_asset_tree
+    //                     .set(
+    //                         found_deposit_info.contract_address.0.into(),
+    //                         found_deposit_info.variable_index.to_hash_out().into(),
+    //                         HashOut::from_partial(&[found_deposit_info.amount]).into(),
+    //                     )
+    //                     .unwrap();
+    //             }
 
-                let asset_root = inner_asset_tree.get_root().unwrap();
+    //             let asset_root = inner_asset_tree.get_root().unwrap();
 
-                let mut asset_tree = PoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-                );
-                let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
-                user_state
-                    .asset_tree
-                    .change_root(asset_tree.get_root().unwrap())
-                    .unwrap();
-                let amount = user_state
-                    .asset_tree
-                    .find(
-                        &merge_key,
-                        &found_deposit_info.contract_address.to_hash_out().into(),
-                        &found_deposit_info.variable_index.to_hash_out().into(),
-                    )
-                    .unwrap();
-                assert_ne!(amount.2.value, WrappedHashOut::ZERO);
+    //             let mut asset_tree = PoseidonSparseMerkleTree::new(
+    //                 user_state.asset_tree.nodes_db.clone(),
+    //                 RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
+    //             );
+    //             let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
+    //             user_state
+    //                 .asset_tree
+    //                 .change_root(asset_tree.get_root().unwrap())
+    //                 .unwrap();
+    //             let amount = user_state
+    //                 .asset_tree
+    //                 .find(
+    //                     &merge_key,
+    //                     &found_deposit_info.contract_address.to_hash_out().into(),
+    //                     &found_deposit_info.variable_index.to_hash_out().into(),
+    //                 )
+    //                 .unwrap();
+    //             assert_ne!(amount.2.value, WrappedHashOut::ZERO);
 
-                // deposit のときは nonce が 0
-                let deposit_nonce = Default::default();
-                let merge_proof = MergeProof {
-                    is_deposit: true,
-                    diff_tree_inclusion_proof: diff_tree_inclusion_proof.clone(),
-                    merge_process_proof,
-                    latest_account_tree_inclusion_proof: SmtInclusionProof::with_root(
-                        Default::default(),
-                    ),
-                    nonce: deposit_nonce,
-                };
-                merge_witnesses.push(merge_proof);
-            }
-        }
+    //             // deposit のときは nonce が 0
+    //             let deposit_nonce = Default::default();
+    //             let merge_proof = MergeProof {
+    //                 is_deposit: true,
+    //                 diff_tree_inclusion_proof: diff_tree_inclusion_proof.clone(),
+    //                 merge_process_proof,
+    //                 latest_account_tree_inclusion_proof: SmtInclusionProof::with_root(
+    //                     Default::default(),
+    //                 ),
+    //                 nonce: deposit_nonce,
+    //             };
+    //             merge_witnesses.push(merge_proof);
+    //         }
+    //     }
 
-        merge_witnesses
-    }
+    //     merge_witnesses
+    // }
 
     pub fn merge_received_asset(
         &self,
@@ -416,29 +415,6 @@ impl Config {
         println!("{}", resp.message);
     }
 
-    pub fn reset_server_state(&self) {
-        let body = "{}";
-        let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/test/reset"))
-            .body(body)
-            .header(CONTENT_TYPE, "application/json")
-            .send()
-            .expect("fail to post");
-        if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
-        }
-
-        let resp = resp
-            .json::<ResponseResetStateBody>()
-            .expect("fail to parse JSON");
-
-        if resp.ok {
-            println!("reset server state successfully");
-        } else {
-            panic!("fail to reset server state");
-        }
-    }
-
     pub fn merge_and_purge_asset(
         &self,
         user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
@@ -449,12 +425,18 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(old_user_asset_root.to_string());
 
-        let (merge_witnesses, latest_block_number) = self.get_merge_transaction_witness(
+        let (raw_merge_witnesses, latest_block_number) = self.get_merge_transaction_witness(
             user_address,
             Some(user_state.last_seen_block_number),
             None,
         );
-        let merge_witnesses = self.merge_received_asset(merge_witnesses, user_address, user_state);
+        let added_merge_witnesses =
+            self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
+        let merge_witnesses = queue_and_dequeue(
+            &mut user_state.rest_merge_witnesses,
+            added_merge_witnesses,
+            N_MERGES,
+        );
 
         let _new_user_asset_root = user_state.asset_tree.get_root();
         // dbg!(new_user_asset_root.to_string());
@@ -862,4 +844,46 @@ impl Config {
 
         (resp.proofs, resp.latest_block_number)
     }
+}
+
+/// `waiting_elements` の末尾に `queued_elements` を追加し,
+/// その後 `waiting_elements` の先頭から最大 `dequeued_len` 個の要素を取り出す.
+fn queue_and_dequeue<T>(
+    waiting_elements: &mut Vec<T>,
+    queued_elements: Vec<T>,
+    dequeued_len: usize,
+) -> Vec<T> {
+    let mut queued_elements = queued_elements;
+    waiting_elements.append(&mut queued_elements);
+    let dequeued_len = dequeued_len.min(waiting_elements.len());
+    waiting_elements
+        .splice(0..dequeued_len, vec![])
+        .collect::<Vec<_>>()
+}
+
+#[test]
+fn test_queue_and_dequeue1() {
+    let mut waiting_elements = vec![0, 1, 2];
+    let queued_elements = vec![3, 4];
+    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
+    assert_eq!(extracted_elements, vec![0, 1]);
+    assert_eq!(waiting_elements, vec![2, 3, 4]);
+}
+
+#[test]
+fn test_queue_and_dequeue2() {
+    let mut waiting_elements = vec![0, 1, 2];
+    let queued_elements = vec![3, 4];
+    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 6);
+    assert_eq!(extracted_elements, vec![0, 1, 2, 3, 4]);
+    assert_eq!(waiting_elements, vec![] as Vec<i32>);
+}
+
+#[test]
+fn test_queue_and_dequeue3() {
+    let mut waiting_elements = vec![0];
+    let queued_elements = vec![1, 2];
+    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
+    assert_eq!(extracted_elements, vec![0, 1]);
+    assert_eq!(waiting_elements, vec![2]);
 }

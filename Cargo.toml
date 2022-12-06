@@ -7,8 +7,8 @@ edition = "2021"
 anyhow = "1.0"
 dirs = "4.0"
 hex = "0.4"
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "2063d0e5c2b8d0066b8e27530118a3fb5a9a86d3" }
-intmax-zkp-core = { git = "https://github.com/InternetMaximalism/intmax-zkp-core", rev = "bf78ecc579ad9cda446a56f12298647fdbf07d74" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "ee84b5002a3da1488d32f1cfc5847c644ef73014" }
+intmax-zkp-core = { git = "https://github.com/InternetMaximalism/intmax-zkp-core", rev = "bb8c7a9f76058a8d5f15074c79aefd2c2bfed22e" }
 plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 serde = "1.0"
