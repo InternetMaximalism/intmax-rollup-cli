@@ -41,8 +41,6 @@ mod tests {
 
         let password = "password";
 
-        service.reset_server_state();
-
         let mut wallet = WalletOnMemory::new(password.to_string());
 
         let sender1_account = Account::<F>::rand();

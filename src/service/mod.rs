@@ -415,29 +415,6 @@ impl Config {
         println!("{}", resp.message);
     }
 
-    pub fn reset_server_state(&self) {
-        let body = "{}";
-        let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/test/reset"))
-            .body(body)
-            .header(CONTENT_TYPE, "application/json")
-            .send()
-            .expect("fail to post");
-        if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
-        }
-
-        let resp = resp
-            .json::<ResponseResetStateBody>()
-            .expect("fail to parse JSON");
-
-        if resp.ok {
-            println!("reset server state successfully");
-        } else {
-            panic!("fail to reset server state");
-        }
-    }
-
     pub fn merge_and_purge_asset(
         &self,
         user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
