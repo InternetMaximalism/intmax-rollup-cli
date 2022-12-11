@@ -335,7 +335,7 @@ impl Config {
 
     pub fn merge_received_asset<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
-        R: RootData<WrappedHashOut<F>>,
+        R: RootData<WrappedHashOut<F>> + Clone,
     >(
         &self,
         received_asset_witness: Vec<ReceivedAssetProof<F>>,
@@ -365,16 +365,21 @@ impl Config {
                 tx_hash
             };
 
-            // witness.assets から asset_root が計算されることを検証する.
-            // ついでに user_state.asset_tree.nodes_db に contract_address 層と variable_index 層のノードを cache する
-            let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
-                user_state.asset_tree.nodes_db.clone(),
-                RootDataTmp::default(),
-            );
+            {
+                let asset_tree = PoseidonSparseMerkleTree::new(
+                    user_state.asset_tree.nodes_db.clone(),
+                    user_state.asset_tree.roots_db.clone(),
+                );
+                let old_inner_asset_root = asset_tree.get(&merge_key).unwrap();
+                assert_eq!(old_inner_asset_root, Default::default());
+            }
+
             for asset in witness.assets {
                 user_state.assets.add(asset.kind, asset.amount, merge_key);
-                inner_asset_tree
+                user_state
+                    .asset_tree
                     .set(
+                        merge_key,
                         asset.kind.contract_address.to_hash_out().into(),
                         asset.kind.variable_index.to_hash_out().into(),
                         HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
@@ -382,19 +387,27 @@ impl Config {
                     .unwrap();
             }
 
-            // assert_eq!(inner_asset_tree.get_root(), asset_root);
-            // dbg!(inner_asset_tree.get_root().unwrap(), asset_root);
+            // witness.assets から asset_root が計算されることを検証する.
+            assert_eq!(
+                user_state.asset_tree.get_asset_root(&merge_key).unwrap(),
+                asset_root
+            );
 
-            let mut asset_tree = PoseidonSparseMerkleTree::new(
-                user_state.asset_tree.nodes_db.clone(),
-                RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-            ); // XXX: 上の操作を asset_tree に対して直接行う
-            let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
+            let merge_process_proof = {
+                let mut asset_tree = PoseidonSparseMerkleTree::new(
+                    user_state.asset_tree.nodes_db.clone(),
+                    RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
+                );
+                let asset_root_with_merge_key = asset_tree
+                    .set(merge_key, Default::default())
+                    .unwrap()
+                    .old_root;
+
+                asset_tree
+                    .set(merge_key, asset_root_with_merge_key)
+                    .unwrap()
+            };
             // dbg!(&merge_process_proof);
-            user_state
-                .asset_tree
-                .change_root(asset_tree.get_root().unwrap())
-                .unwrap();
 
             let merge_proof = MergeProof {
                 is_deposit: witness.is_deposit,
@@ -427,7 +440,7 @@ impl Config {
 
     pub fn merge_and_purge_asset<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
-        R: RootData<WrappedHashOut<F>>,
+        R: RootData<WrappedHashOut<F>> + Clone,
     >(
         &self,
         user_state: &mut UserState<D, R>,
