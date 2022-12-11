@@ -33,7 +33,10 @@ use plonky2::{
     field::types::{Field, PrimeField64},
     hash::{hash_types::HashOut, poseidon::PoseidonHash},
     iop::witness::PartialWitness,
-    plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+    plonk::{
+        circuit_data::CircuitConfig,
+        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -171,6 +174,7 @@ impl Config {
         user_asset_root: WrappedHashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let user_tx_proof = {
+            let config = CircuitConfig::standard_recursion_config();
             let merge_and_purge_circuit = make_user_proof_circuit::<
                 F,
                 C,
@@ -185,7 +189,8 @@ impl Config {
                 N_LOG_VARIABLES,
                 N_DIFFS,
                 N_MERGES,
-            >();
+                N_DEPOSITS,
+            >(config);
 
             let mut pw = PartialWitness::new();
             let _public_inputs = merge_and_purge_circuit.targets.set_witness(
@@ -721,7 +726,8 @@ impl Config {
         sender_account: Account<F>,
         message: HashOut<F>,
     ) -> SimpleSignatureProofWithPublicInputs<F, C, D> {
-        let simple_signature_circuit = make_simple_signature_circuit();
+        let config = CircuitConfig::standard_recursion_config();
+        let simple_signature_circuit = make_simple_signature_circuit(config);
 
         let mut pw = PartialWitness::new();
         simple_signature_circuit
