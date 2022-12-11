@@ -401,13 +401,20 @@ impl Config {
                 let asset_root_with_merge_key = asset_tree
                     .set(merge_key, Default::default())
                     .unwrap()
-                    .old_root;
+                    .old_value;
+
+                if cfg!(debug_assertion) {
+                    assert_eq!(
+                        *asset_root_with_merge_key,
+                        PoseidonHash::two_to_one(*asset_root, *merge_key)
+                    );
+                }
 
                 asset_tree
                     .set(merge_key, asset_root_with_merge_key)
                     .unwrap()
             };
-            // dbg!(&merge_process_proof);
+            dbg!(&merge_process_proof);
 
             let merge_proof = MergeProof {
                 is_deposit: witness.is_deposit,
