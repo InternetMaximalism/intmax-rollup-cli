@@ -15,8 +15,10 @@ use intmax_zkp_core::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
         goldilocks_poseidon::{
             LayeredLayeredPoseidonSparseMerkleTree, LayeredPoseidonSparseMerkleTree,
-            NodeDataMemory, PoseidonSparseMerkleTree, RootDataMemory, RootDataTmp, WrappedHashOut,
+            NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp, WrappedHashOut,
         },
+        node_data::NodeData,
+        root_data::RootData,
     },
     transaction::{
         asset::{Asset, ReceivedAssetProof, TokenKind},
@@ -331,11 +333,14 @@ impl Config {
     //     merge_witnesses
     // }
 
-    pub fn merge_received_asset(
+    pub fn merge_received_asset<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+        R: RootData<WrappedHashOut<F>>,
+    >(
         &self,
         received_asset_witness: Vec<ReceivedAssetProof<F>>,
         _user_address: Address<F>,
-        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
+        user_state: &mut UserState<D, R>,
     ) -> Vec<MergeProof<F>> {
         let mut merge_witnesses = vec![];
         for witness in received_asset_witness {
@@ -383,7 +388,7 @@ impl Config {
             let mut asset_tree = PoseidonSparseMerkleTree::new(
                 user_state.asset_tree.nodes_db.clone(),
                 RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-            );
+            ); // XXX: 上の操作を asset_tree に対して直接行う
             let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
             // dbg!(&merge_process_proof);
             user_state
@@ -420,9 +425,12 @@ impl Config {
         println!("{}", resp.message);
     }
 
-    pub fn merge_and_purge_asset(
+    pub fn merge_and_purge_asset<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+        R: RootData<WrappedHashOut<F>>,
+    >(
         &self,
-        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
+        user_state: &mut UserState<D, R>,
         user_address: Address<F>,
         diffs: &[(Address<F>, Asset<F>)],
         broadcast: bool,
@@ -547,8 +555,7 @@ impl Config {
         // dbg!(transaction.diff_root);
 
         // 宛先ごとに渡す asset を整理する
-        let tx_diff_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataTmp> =
-            tx_diff_tree.into();
+        let tx_diff_tree: PoseidonSparseMerkleTree<_, _> = tx_diff_tree.into();
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
         let mut assets_map: HashMap<_, (_, Vec<_>)> = HashMap::new();
         for witness in purge_output_witness.iter() {
@@ -748,9 +755,12 @@ impl Config {
         received_signature
     }
 
-    pub fn sign_proposed_block(
+    pub fn sign_proposed_block<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+        R: RootData<WrappedHashOut<F>>,
+    >(
         &self,
-        user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
+        user_state: &mut UserState<D, R>,
         user_address: Address<F>,
     ) {
         let pending_transactions = user_state.get_pending_transaction_hashes();
