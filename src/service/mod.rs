@@ -14,8 +14,8 @@ use intmax_zkp_core::{
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
         goldilocks_poseidon::{
-            LayeredLayeredPoseidonSparseMerkleTree, LayeredPoseidonSparseMerkleTree,
-            NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp, WrappedHashOut,
+            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+            RootDataTmp, WrappedHashOut,
         },
         node_data::NodeData,
         root_data::RootData,
