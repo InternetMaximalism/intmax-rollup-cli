@@ -7,8 +7,8 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        circuits::MergeAndPurgeTransitionPublicInputs, gadgets::merge::MergeProof,
-        tree::user_asset::UserAssetTree,
+        asset::TokenKind, circuits::MergeAndPurgeTransitionPublicInputs,
+        gadgets::merge::MergeProof, tree::user_asset::UserAssetTree,
     },
     zkdsa::account::{Account, Address},
 };
@@ -28,8 +28,25 @@ pub struct UserState<
     pub asset_tree: UserAssetTree<D, R>,
     pub assets: Assets<F>,
     pub last_seen_block_number: u32,
+
+    /// deprecated
     pub transactions: HashMap<WrappedHashOut<F>, MergeAndPurgeTransitionPublicInputs<F>>,
+
+    /// key: tx_hash, value: removed_assets = (kind, amount, merge_key)
+    #[allow(clippy::type_complexity)]
+    pub pending_transactions:
+        HashMap<WrappedHashOut<F>, Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>>,
     pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+
+    /// the set consisting of `(tx_hash, removed_assets, block_number)`.
+    #[allow(clippy::type_complexity)]
+    pub sent_transactions:
+        HashMap<WrappedHashOut<F>, (Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>, Option<u32>)>,
+    // HashSet<(
+    //     WrappedHashOut<F>,
+    //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
+    //     Option<u32>,
+    // )>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -44,10 +61,21 @@ pub struct SerializableUserState {
     pub assets: Assets<F>,
     #[serde(default)]
     pub last_seen_block_number: u32,
-    #[serde(default)]
-    pub transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>, // pending_transactions
+
+    // /// the vector consisting of `(tx_hash, removed_assets)`
+    // #[serde(default)]
+    // pub pending_transactions: Vec<(
+    //     WrappedHashOut<F>,
+    //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
+    // )>,
     #[serde(default)]
     pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+
+    #[serde(default)]
+    pub sent_transactions: Vec<(
+        WrappedHashOut<F>,
+        (Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>, Option<u32>),
+    )>,
 }
 
 impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
@@ -57,9 +85,14 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             .multi_insert(value.asset_tree_nodes)
             .unwrap();
         let asset_tree = UserAssetTree::new(asset_tree_nodes, value.asset_tree_root.into());
-        let mut transactions = HashMap::new();
-        for tx in value.transactions {
-            transactions.insert(tx.tx_hash, tx);
+        let transactions = HashMap::new();
+        let pending_transactions = HashMap::new();
+        // for tx in value.pending_transactions {
+        //     pending_transactions.insert(tx.0, tx.1);
+        // }
+        let mut sent_transactions = HashMap::new();
+        for (key, value) in value.sent_transactions {
+            sent_transactions.insert(key, value);
         }
 
         Self {
@@ -68,7 +101,9 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             assets: value.assets,
             last_seen_block_number: value.last_seen_block_number,
             transactions,
+            pending_transactions,
             rest_merge_witnesses: value.rest_merge_witnesses,
+            sent_transactions,
         }
     }
 }
@@ -92,16 +127,18 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             .clone()
             .into_iter()
             .collect::<Vec<_>>();
-        let transactions = value.transactions.values().cloned().collect::<Vec<_>>();
+        // let pending_transactions = value.pending_transactions.into_iter().collect::<Vec<_>>();
+        let sent_transactions = value.sent_transactions.into_iter().collect::<Vec<_>>();
 
         Self {
             account: value.account,
             asset_tree_nodes,
             asset_tree_root,
             assets: value.assets,
-            transactions,
+            // pending_transactions,
             last_seen_block_number: value.last_seen_block_number,
             rest_merge_witnesses: value.rest_merge_witnesses,
+            sent_transactions,
         }
     }
 }
@@ -111,32 +148,6 @@ impl Serialize for UserState<NodeDataMemory, RootDataMemory> {
         let raw = SerializableUserState::from(self.clone());
 
         raw.serialize(serializer)
-    }
-}
-
-impl<
-        D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>,
-        R: RootData<GoldilocksHashOut>,
-    > UserState<D, R>
-{
-    pub fn insert_pending_transactions(
-        &mut self,
-        pending_transactions: &[MergeAndPurgeTransitionPublicInputs<GoldilocksField>],
-    ) {
-        for tx in pending_transactions {
-            self.transactions.insert(tx.tx_hash, tx.clone());
-        }
-    }
-
-    pub fn get_pending_transaction_hashes(&self) -> Vec<GoldilocksHashOut> {
-        self.transactions.keys().cloned().collect::<Vec<_>>()
-    }
-
-    pub fn remove_pending_transactions(
-        &mut self,
-        tx_hash: GoldilocksHashOut,
-    ) -> Option<MergeAndPurgeTransitionPublicInputs<GoldilocksField>> {
-        self.transactions.remove(&tx_hash)
     }
 }
 
@@ -212,8 +223,10 @@ impl Wallet for WalletOnMemory {
                 asset_tree,
                 assets: Default::default(),
                 transactions: Default::default(),
-                last_seen_block_number: 0, // TODO: current latest block number
+                pending_transactions: Default::default(),
+                last_seen_block_number: 0,
                 rest_merge_witnesses: Default::default(),
+                sent_transactions: Default::default(),
             },
         );
         assert!(old_account.is_none(), "designated address was already used");
@@ -225,34 +238,5 @@ impl Wallet for WalletOnMemory {
 
     fn get_default_account(&self) -> Option<Address<F>> {
         self.default_account
-    }
-
-    fn insert_pending_transactions(
-        &mut self,
-        user_address: Address<F>,
-        pending_transactions: &[MergeAndPurgeTransitionPublicInputs<GoldilocksField>],
-    ) {
-        self.data
-            .get_mut(&user_address)
-            .expect("account was not found")
-            .insert_pending_transactions(pending_transactions);
-    }
-
-    fn get_pending_transaction_hashes(&self, user_address: Address<F>) -> Vec<GoldilocksHashOut> {
-        self.data
-            .get(&user_address)
-            .expect("account was not found")
-            .get_pending_transaction_hashes()
-    }
-
-    fn remove_pending_transactions(
-        &mut self,
-        user_address: Address<F>,
-        tx_hash: GoldilocksHashOut,
-    ) -> Option<MergeAndPurgeTransitionPublicInputs<GoldilocksField>> {
-        self.data
-            .get_mut(&user_address)
-            .expect("account was not found")
-            .remove_pending_transactions(tx_hash)
     }
 }

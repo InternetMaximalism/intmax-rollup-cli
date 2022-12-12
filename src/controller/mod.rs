@@ -320,10 +320,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .get(&user_address)
                 .expect("user address was not found in wallet");
 
-            if verbose {
-                println!("{}", serde_json::to_string(&user_state.assets).unwrap());
-            }
-
             let total_amount_map = user_state.assets.calc_total_amount();
 
             let separator = "-----------------------------------------------------------------------------------------";
@@ -340,6 +336,13 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     println!("{}", separator);
                 }
             }
+
+            if verbose {
+                println!(
+                    "raw data: {}",
+                    serde_json::to_string(&user_state.assets).unwrap()
+                );
+            }
         }
         SubCommand::Transaction { tx_command } => match tx_command {
             TransactionCommand::Merge { user_address } => {
@@ -353,7 +356,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 service.merge_and_purge_asset(user_state, user_address, &[], false);
 
                 service.trigger_propose_block();
-                service.sign_proposed_block(user_state, user_address);
+                // service.sign_proposed_block(user_state, user_address);
                 service.trigger_approve_block();
             }
             TransactionCommand::Send {

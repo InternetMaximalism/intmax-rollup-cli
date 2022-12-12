@@ -344,16 +344,6 @@ impl Config {
     ) -> Vec<MergeProof<F>> {
         let mut merge_witnesses = vec![];
         for witness in received_asset_witness {
-            // let (index, found_deposit_info) = block
-            //     .deposit_list
-            //     .iter()
-            //     .enumerate()
-            //     .find(|(_, leaf)| leaf.receiver_address == user_address)
-            //     .expect("your deposit info was not found");
-            // let (_deposit_root, deposit_proof) =
-            //     make_deposit_proof(&block.deposit_list, Some(index));
-            // let (deposit_proof1, deposit_proof2) = deposit_proof.unwrap();
-
             // let pseudo_tx_hash = HashOut::ZERO;
             let tx_hash = witness.diff_tree_inclusion_proof.1.value;
             let asset_root = witness.diff_tree_inclusion_proof.2.value;
@@ -365,13 +355,28 @@ impl Config {
                 tx_hash
             };
 
+            // sender が cancel した transaction は受け取ることができない.
+            {
+                let is_valid_confirmed_block_number =
+                    witness.latest_account_tree_inclusion_proof.value.to_u32()
+                        == witness.diff_tree_inclusion_proof.0.block_number;
+                if !witness.is_deposit && !is_valid_confirmed_block_number {
+                    println!("The following transaction was canceled: {}", tx_hash);
+                    continue;
+                }
+            }
+
+            // 同じ transaction を二度 merge することはできない.
             {
                 let asset_tree = PoseidonSparseMerkleTree::new(
                     user_state.asset_tree.nodes_db.clone(),
                     user_state.asset_tree.roots_db.clone(),
                 );
-                let old_inner_asset_root = asset_tree.get(&merge_key).unwrap();
-                assert_eq!(old_inner_asset_root, Default::default());
+                let old_asset_root_with_merge_key = asset_tree.get(&merge_key).unwrap();
+                if old_asset_root_with_merge_key != Default::default() {
+                    println!("The following transaction has already merged: {}", tx_hash);
+                    continue;
+                }
             }
 
             for asset in witness.assets {
@@ -394,6 +399,7 @@ impl Config {
             );
 
             let merge_process_proof = {
+                // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
                 let mut asset_tree = PoseidonSparseMerkleTree::new(
                     user_state.asset_tree.nodes_db.clone(),
                     RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
@@ -452,17 +458,113 @@ impl Config {
         &self,
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
-        diffs: &[(Address<F>, Asset<F>)],
+        purge_diffs: &[(Address<F>, Asset<F>)],
         broadcast: bool,
     ) {
-        let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
-        // dbg!(old_user_asset_root.to_string());
+        let (raw_merge_witnesses, last_seen_block_number) = self
+            .get_merge_transaction_witness(
+                user_address,
+                Some(user_state.last_seen_block_number),
+                None,
+            )
+            .unwrap_or_else(|err| {
+                dbg!(err);
 
-        let (raw_merge_witnesses, latest_block_number) = self.get_merge_transaction_witness(
-            user_address,
-            Some(user_state.last_seen_block_number),
-            None,
-        );
+                (vec![], user_state.last_seen_block_number)
+            });
+        let (blocks, _) = self
+            .get_blocks(
+                Some(user_state.last_seen_block_number),
+                Some(last_seen_block_number),
+            )
+            .unwrap_or_else(|err| {
+                dbg!(err);
+
+                (vec![], last_seen_block_number)
+            });
+
+        // 自分が cancel した transaction に含まれる asset を自分の残高に反映させる.
+        {
+            let canceled_transactions = blocks
+                .iter()
+                .flat_map(|block| {
+                    block
+                        .address_list
+                        .iter()
+                        .zip(block.transactions.iter())
+                        .filter(|(v, _)| v.sender_address == user_address && !v.is_valid)
+                    // .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            // dbg!(&canceled_transactions
+            //     .iter()
+            //     .map(|v| v.1.to_string())
+            //     .collect::<Vec<_>>());
+            // dbg!(&user_state
+            //     .sent_transactions
+            //     .iter()
+            //     .map(|v| v.0.to_string())
+            //     .collect::<Vec<_>>());
+
+            // `sent_transactions` の中で cancel した transaction であるものを列挙する.
+            let recovered_assets = canceled_transactions
+                .iter()
+                .filter_map(|(_, tx_hash)| {
+                    // dbg!(tx_hash.to_string());
+
+                    user_state.sent_transactions.get(tx_hash)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for assets in recovered_assets {
+                // dbg!(&assets);
+                for asset in assets.0 {
+                    // 既に recover されている asset を再び感情しない.
+                    let old_amount = user_state
+                        .asset_tree
+                        .find(
+                            &asset.2,
+                            &asset.0.contract_address.to_hash_out().into(),
+                            &asset.0.variable_index.to_hash_out().into(),
+                        )
+                        .unwrap()
+                        .2
+                        .value;
+                    if old_amount != Default::default() {
+                        continue;
+                    }
+
+                    user_state
+                        .asset_tree
+                        .set(
+                            asset.2,
+                            asset.0.contract_address.to_hash_out().into(),
+                            asset.0.variable_index.to_hash_out().into(),
+                            HashOut::from_partial(&[F::from_canonical_u64(asset.1)]).into(),
+                        )
+                        .unwrap();
+                    user_state.assets.add(asset.0, asset.1, asset.2);
+                }
+            }
+
+            // cancel した transaction は後で署名することもないので削除する.
+            for (_, target_tx_hash) in canceled_transactions {
+                user_state.sent_transactions.remove(target_tx_hash);
+            }
+
+            // proposed_block_number が last_seen_block_number 以下のものを削除する.
+            user_state.sent_transactions.retain(|_, v| {
+                if let Some(proposed_block_number) = v.1 {
+                    proposed_block_number > last_seen_block_number
+                } else {
+                    true
+                }
+            });
+        }
+
+        let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
+        // dbg!(&old_user_asset_root);
+
         let added_merge_witnesses =
             self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
         let merge_witnesses = queue_and_dequeue(
@@ -471,8 +573,8 @@ impl Config {
             N_MERGES,
         );
 
-        let _new_user_asset_root = user_state.asset_tree.get_root();
-        // dbg!(new_user_asset_root.to_string());
+        // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
+        // dbg!(&middle_user_asset_root);
 
         // 人に渡す asset から構成される tree
         let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
@@ -483,7 +585,7 @@ impl Config {
         let mut purge_input_witness = vec![];
         let mut purge_output_witness = vec![];
         let mut output_asset_map = HashMap::new();
-        for (receiver_address, output_asset) in diffs {
+        for (receiver_address, output_asset) in purge_diffs {
             // dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
@@ -504,6 +606,7 @@ impl Config {
             output_asset_map.insert(output_asset.kind, old_amount + output_asset.amount);
         }
 
+        let mut removed_assets = vec![];
         for (kind, output_amount) in output_asset_map {
             let input_assets = user_state.assets.filter(kind);
 
@@ -552,7 +655,6 @@ impl Config {
                         input_asset.2, // merge_key
                         input_asset.0.contract_address.to_hash_out().into(),
                         input_asset.0.variable_index.to_hash_out().into(),
-                        // HashOut::from_partial(&[F::from_canonical_u64(input_asset.1)]).into(),
                         HashOut::ZERO.into(),
                     )
                     .unwrap();
@@ -560,6 +662,8 @@ impl Config {
             }
 
             user_state.assets.remove(kind);
+
+            removed_assets.append(&mut input_assets.0.into_iter().collect::<Vec<_>>());
         }
 
         let nonce = WrappedHashOut::rand();
@@ -611,8 +715,13 @@ impl Config {
             );
         }
 
-        user_state.insert_pending_transactions(&[transaction]);
-        user_state.last_seen_block_number = latest_block_number;
+        // user_state
+        //     .pending_transactions
+        //     .insert(transaction.tx_hash, removed_assets);
+        user_state
+            .sent_transactions
+            .insert(transaction.tx_hash, (removed_assets, None));
+        user_state.last_seen_block_number = last_seen_block_number;
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
@@ -718,7 +827,12 @@ impl Config {
         Ok(resp.block)
     }
 
-    pub fn get_blocks(&self, since: Option<u32>, until: Option<u32>) -> (Vec<BlockInfo<F>>, u32) {
+    /// Returns `(blocks, until_or_latest_block_number)`
+    pub fn get_blocks(
+        &self,
+        since: Option<u32>,
+        until: Option<u32>,
+    ) -> anyhow::Result<(Vec<BlockInfo<F>>, u32)> {
         // let query = RequestBlockQuery {
         //     since,
         //     until,
@@ -736,16 +850,15 @@ impl Config {
         let request = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url("/block"))
             .query(&query);
-        let resp = request.send().expect("fail to fetch");
+        let resp = request.send()?;
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().unwrap());
         }
 
-        let resp = resp
-            .json::<ResponseBlockQuery>()
-            .expect("fail to parse JSON");
+        let resp = resp.json::<ResponseBlockQuery>()?;
+        let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
-        (resp.blocks, resp.latest_block_number)
+        Ok((resp.blocks, latest_block_number))
     }
 
     pub fn sign_to_message(
@@ -783,14 +896,30 @@ impl Config {
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
     ) {
-        let pending_transactions = user_state.get_pending_transaction_hashes();
+        let pending_transactions = user_state
+            .sent_transactions
+            .iter_mut()
+            .filter(|(_, (_, proposed_block_number))| proposed_block_number.is_none());
+        for (tx_hash, (_, proposed_block_number)) in pending_transactions {
+            self.get_transaction_inclusion_witness(user_address, *tx_hash)
+                .map(|tx_inclusion_witness| {
+                    let latest_block = self.get_latest_block().unwrap();
+                    let block_hash = tx_inclusion_witness.root;
+                    let received_signature = self.sign_to_message(user_state.account, *block_hash);
+                    self.send_received_signature(received_signature, *tx_hash);
 
-        for tx_hash in pending_transactions {
-            let tx_inclusion_proof = self.get_transaction_inclusion_witness(user_address, tx_hash);
-            let block_hash = tx_inclusion_proof.root;
-            let received_signature = self.sign_to_message(user_state.account, *block_hash);
-            self.send_received_signature(received_signature, tx_hash);
-            user_state.remove_pending_transactions(tx_hash);
+                    *proposed_block_number = Some(latest_block.header.block_number + 1);
+                })
+                .unwrap_or_else(|err| {
+                    let validation_error = format!(
+                        "{}: {}",
+                        "Validation error",
+                        "given transaction hash was not found in the current proposal block"
+                    );
+                    if !err.to_string().starts_with(&validation_error) {
+                        dbg!(err);
+                    }
+                });
         }
     }
 
@@ -798,7 +927,7 @@ impl Config {
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
-    ) -> MerkleProof<F> {
+    ) -> anyhow::Result<MerkleProof<F>> {
         let query = vec![
             ("user_address", format!("{}", user_address)),
             ("tx_hash", format!("{}", tx_hash)),
@@ -807,16 +936,14 @@ impl Config {
         let request = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url("/tx/witness"))
             .query(&query);
-        let resp = request.send().expect("fail to fetch");
+        let resp = request.send()?;
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().unwrap());
         }
 
-        let resp = resp
-            .json::<ResponseTxWitnessQuery>()
-            .expect("fail to parse JSON");
+        let resp = resp.json::<ResponseTxWitnessQuery>()?;
 
-        resp.tx_inclusion_witness
+        Ok(resp.tx_inclusion_witness)
     }
 
     pub fn send_received_signature(
@@ -852,12 +979,13 @@ impl Config {
         }
     }
 
+    /// Returns `(raw_merge_witnesses, until_or_latest_block_number)`
     pub fn get_merge_transaction_witness(
         &self,
         user_address: Address<F>,
         since: Option<u32>,
         until: Option<u32>,
-    ) -> (Vec<ReceivedAssetProof<F>>, u32) {
+    ) -> anyhow::Result<(Vec<ReceivedAssetProof<F>>, u32)> {
         let mut query = vec![("user_address", format!("{}", user_address))];
         if let Some(since) = since {
             query.push(("since", format!("{}", since)));
@@ -869,16 +997,15 @@ impl Config {
         let request = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url("/tx/received"))
             .query(&query);
-        let resp = request.send().expect("fail to fetch");
+        let resp = request.send()?;
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().unwrap());
         }
 
-        let resp = resp
-            .json::<ResponseTxReceivedQuery>()
-            .expect("fail to parse JSON");
+        let resp = resp.json::<ResponseTxReceivedQuery>()?;
+        let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
-        (resp.proofs, resp.latest_block_number)
+        Ok((resp.proofs, latest_block_number))
     }
 }
 
