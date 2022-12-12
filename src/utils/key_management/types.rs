@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use intmax_zkp_core::{
     sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
-    transaction::{asset::TokenKind, circuits::MergeAndPurgeTransitionPublicInputs},
+    transaction::asset::TokenKind,
     zkdsa::account::Address,
 };
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
@@ -51,6 +51,7 @@ impl Serialize for Assets<GoldilocksField> {
 }
 
 impl<F: RichField> Assets<F> {
+    // TODO: tx_hash ではなく merge_key
     pub fn add(&mut self, kind: TokenKind<F>, amount: u64, tx_hash: WrappedHashOut<F>) {
         // NOTICE: どの kind と tx_hash の組み合わせに対しても要素は高々一つ
         self.0.insert((kind, amount, tx_hash));
@@ -105,24 +106,4 @@ pub trait Wallet {
 
     /// Fetch your default account.
     fn get_default_account(&self) -> Option<Address<GoldilocksField>>;
-
-    /// Add your pending transactions.
-    fn insert_pending_transactions(
-        &mut self,
-        user_address: Address<GoldilocksField>,
-        pending_transactions: &[MergeAndPurgeTransitionPublicInputs<GoldilocksField>],
-    );
-
-    /// Fetch your all pending transactions.
-    fn get_pending_transaction_hashes(
-        &self,
-        user_address: Address<GoldilocksField>,
-    ) -> Vec<GoldilocksHashOut>;
-
-    /// Returns the removed transaction.
-    fn remove_pending_transactions(
-        &mut self,
-        user_address: Address<GoldilocksField>,
-        tx_hash: GoldilocksHashOut,
-    ) -> Option<MergeAndPurgeTransitionPublicInputs<GoldilocksField>>;
 }
