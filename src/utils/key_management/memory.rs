@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use intmax_zkp_core::{
     sparse_merkle_tree::{
-        goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            RootDataMemory, WrappedHashOut,
-        },
+        goldilocks_poseidon::{GoldilocksHashOut, NodeDataMemory, RootDataMemory, WrappedHashOut},
         node_data::{Node, NodeData},
         root_data::RootData,
     },
-    transaction::{circuits::MergeAndPurgeTransitionPublicInputs, gadgets::merge::MergeProof},
+    transaction::{
+        circuits::MergeAndPurgeTransitionPublicInputs, gadgets::merge::MergeProof,
+        tree::user_asset::UserAssetTree,
+    },
     zkdsa::account::{Account, Address},
 };
 use plonky2::field::goldilocks_field::GoldilocksField;
@@ -25,7 +25,7 @@ pub struct UserState<
     R: RootData<GoldilocksHashOut>,
 > {
     pub account: Account<F>,
-    pub asset_tree: LayeredLayeredPoseidonSparseMerkleTree<D, R>,
+    pub asset_tree: UserAssetTree<D, R>,
     pub assets: Assets<F>,
     pub last_seen_block_number: u32,
     pub transactions: HashMap<WrappedHashOut<F>, MergeAndPurgeTransitionPublicInputs<F>>,
@@ -56,10 +56,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
         asset_tree_nodes
             .multi_insert(value.asset_tree_nodes)
             .unwrap();
-        let asset_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
-            asset_tree_nodes,
-            value.asset_tree_root.into(),
-        );
+        let asset_tree = UserAssetTree::new(asset_tree_nodes, value.asset_tree_root.into());
         let mut transactions = HashMap::new();
         for tx in value.transactions {
             transactions.insert(tx.tx_hash, tx);
@@ -151,10 +148,6 @@ pub struct WalletOnMemory {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializableWalletOnMemory {
-    // #[serde(bound(
-    //     serialize = "Vec<UserState<NodeDataMemory, RootDataMemory>>: Serialize",
-    //     deserialize = "Vec<UserState<NodeDataMemory, RootDataMemory>>: Deserialize<'de>"
-    // ))]
     pub data: Vec<UserState<NodeDataMemory, RootDataMemory>>,
     #[serde(default)]
     pub default_account: Option<Address<F>>,
@@ -211,7 +204,7 @@ impl Wallet for WalletOnMemory {
     }
 
     fn add_account(&mut self, account: Account<F>) {
-        let asset_tree = LayeredLayeredPoseidonSparseMerkleTree::default();
+        let asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataMemory::default());
         let old_account = self.data.insert(
             account.address,
             UserState {
