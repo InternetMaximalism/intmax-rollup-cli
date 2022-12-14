@@ -7,8 +7,7 @@ ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commi
 ```sh
 git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git
 cd intmax-rollup-cli
-rustup override set nightly
-cargo --version # >= 1.65.0-nightly
+cargo --version # 1.68.0-nightly
 cargo build --release
 alias intmax='./target/release/intmax-client'
 intmax config aggregator-url https://prealpha.testnet.intmax.io/

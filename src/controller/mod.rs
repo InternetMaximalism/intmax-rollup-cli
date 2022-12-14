@@ -286,7 +286,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             }
             AccountCommand::SetDefault { user_address } => {
                 let account_list = wallet.data.keys().cloned().collect::<Vec<_>>();
-                if let Some(user_address) = user_address && !account_list.iter().any(|v| v == &user_address) {
+                if !account_list.iter().any(|v| Some(*v) == user_address) {
                     println!("given account does not exist in your wallet");
                 } else {
                     wallet.set_default_account(user_address);
