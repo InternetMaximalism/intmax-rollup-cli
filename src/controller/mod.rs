@@ -75,12 +75,12 @@ enum SubCommand {
         #[structopt(subcommand)]
         tx_command: TransactionCommand,
     },
-    // /// Block
-    // #[structopt(name = "block")]
-    // Block {
-    //     #[structopt(subcommand)]
-    //     block_command: BlockCommand,
-    // },
+    /// Block
+    #[structopt(name = "block")]
+    Block {
+        #[structopt(subcommand)]
+        block_command: BlockCommand,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -141,21 +141,27 @@ enum TransactionCommand {
     // MultiSend {}
 }
 
-// #[derive(Debug, StructOpt)]
-// enum BlockCommand {
-//     /// Trigger to propose a block.
-//     #[structopt(name = "propose")]
-//     Propose {},
-//     /// Sign the diff.
-//     #[structopt(name = "sign")]
-//     Sign {
-//         #[structopt(long)]
-//         user_address: Option<Address<F>>,
-//     },
-//     /// Trigger to approve a block.
-//     #[structopt(name = "approve")]
-//     Approve {},
-// }
+#[derive(Debug, StructOpt)]
+enum BlockCommand {
+    /// Trigger to propose a block.
+    #[structopt(name = "propose")]
+    Propose {},
+    /// Sign the diff.
+    #[structopt(name = "sign")]
+    Sign {
+        #[structopt(long)]
+        user_address: Option<Address<F>>,
+    },
+    /// Trigger to approve a block.
+    #[structopt(name = "approve")]
+    Approve {},
+    /// Verify a approved block.
+    #[structopt(name = "verify")]
+    Verify {
+        #[structopt(long, short = "n")]
+        block_number: Option<u32>,
+    },
+}
 
 pub fn parse_address<W: Wallet>(
     wallet: &W,
@@ -179,11 +185,28 @@ pub fn invoke_command() -> anyhow::Result<()> {
         println!("make directory: {}", intmax_dir.to_string_lossy());
     }
 
-    let mut wallet_file_path = intmax_dir.clone();
-    wallet_file_path.push("wallet");
-
     let mut config_file_path = intmax_dir.clone();
     config_file_path.push("config");
+
+    let service = if let Ok(mut file) = File::open(config_file_path.clone()) {
+        let mut encoded_service = String::new();
+        file.read_to_string(&mut encoded_service)?;
+        serde_json::from_str(&encoded_service).unwrap()
+    } else {
+        Config::new(DEFAULT_AGGREGATOR_URL)
+    };
+
+    let mut wallet_dir_path = intmax_dir.clone();
+    let aggregator_url = service
+        .aggregator_api_url("")
+        .split("://")
+        .last()
+        .unwrap()
+        .to_string();
+    assert!(!aggregator_url.is_empty());
+    wallet_dir_path.push(aggregator_url);
+    let mut wallet_file_path = wallet_dir_path.clone();
+    wallet_file_path.push("wallet");
 
     let Cli { sub_command } = Cli::from_args();
 
@@ -199,14 +222,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
         serde_json::from_str(&encoded_wallet).unwrap()
     } else {
         WalletOnMemory::new(password.to_string())
-    };
-
-    let service = if let Ok(mut file) = File::open(config_file_path.clone()) {
-        let mut encoded_service = String::new();
-        file.read_to_string(&mut encoded_service)?;
-        serde_json::from_str(&encoded_service).unwrap()
-    } else {
-        Config::new(DEFAULT_AGGREGATOR_URL)
     };
 
     match sub_command {
@@ -410,27 +425,31 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 service.trigger_approve_block();
             }
         },
-        // SubCommand::Block { block_command } => match block_command {
-        //     BlockCommand::Propose {} => {
-        //         service.trigger_propose_block();
-        //     }
-        //     BlockCommand::Sign { user_address } => {
-        //         println!("block sign");
-        //         let user_address =
-        //             parse_address(&wallet, user_address).expect("user address was not given");
-        //         let user_state = wallet
-        //             .data
-        //             .get_mut(&user_address)
-        //             .expect("user address was not found in wallet");
-        //         service.sign_proposed_block(user_state, user_address);
-        //     }
-        //     BlockCommand::Approve {} => {
-        //         service.trigger_approve_block();
-        //     }
-        // },
+        SubCommand::Block { block_command } => match block_command {
+            BlockCommand::Propose {} => {
+                service.trigger_propose_block();
+            }
+            BlockCommand::Sign { user_address } => {
+                println!("block sign");
+                let user_address =
+                    parse_address(&wallet, user_address).expect("user address was not given");
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+                service.sign_proposed_block(user_state, user_address);
+            }
+            BlockCommand::Approve {} => {
+                service.trigger_approve_block();
+            }
+            BlockCommand::Verify { block_number } => {
+                service.verify_block(block_number).unwrap();
+            }
+        },
     }
 
     let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+    std::fs::create_dir(wallet_dir_path).unwrap_or(());
     let mut file = File::create(wallet_file_path)?;
     write!(file, "{}", encoded_wallet)?;
     file.flush()?;

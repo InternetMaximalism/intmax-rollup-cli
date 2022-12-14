@@ -9,6 +9,7 @@ use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
         block::BlockInfo,
+        circuits::make_block_proof_circuit,
         gadgets::deposit_block::{DepositInfo, VariableIndex},
     },
     sparse_merkle_tree::{
@@ -809,6 +810,78 @@ impl Config {
         resp.new_block
     }
 
+    pub fn verify_block(&self, block_number: Option<u32>) -> anyhow::Result<()> {
+        let latest_block = self.get_latest_block().unwrap();
+        let block_number = block_number.unwrap_or(latest_block.header.block_number);
+        let block_details = self.get_block_details(block_number).unwrap();
+
+        let config = CircuitConfig::standard_recursion_config();
+        let simple_signature_circuit = make_simple_signature_circuit(config.clone());
+        let merge_and_purge_circuit = make_user_proof_circuit(config.clone());
+        let block_circuit = make_block_proof_circuit::<
+            F,
+            C,
+            D,
+            N_LOG_MAX_USERS,
+            N_LOG_MAX_TXS,
+            N_LOG_MAX_CONTRACTS,
+            N_LOG_MAX_VARIABLES,
+            N_LOG_TXS,
+            N_LOG_RECIPIENTS,
+            N_LOG_CONTRACTS,
+            N_LOG_VARIABLES,
+            N_DIFFS,
+            N_MERGES,
+            N_TXS,
+            N_DEPOSITS,
+        >(config, &merge_and_purge_circuit, &simple_signature_circuit);
+
+        let nodes_db = NodeDataMemory::default();
+        let mut deposit_tree =
+            LayeredLayeredPoseidonSparseMerkleTree::new(nodes_db, RootDataTmp::default());
+        let deposit_process_proofs = block_details
+            .deposit_list
+            .iter()
+            .map(|leaf| {
+                deposit_tree
+                    .set(
+                        leaf.receiver_address.0.into(),
+                        leaf.contract_address.0.into(),
+                        leaf.variable_index.to_hash_out().into(),
+                        HashOut::from_partial(&[leaf.amount]).into(),
+                    )
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        dbg!(
+            &block_details.world_state_process_proofs,
+            &block_details.world_state_revert_proofs,
+        );
+        let mut pw = PartialWitness::new();
+        block_circuit.targets.set_witness::<F, C>(
+            &mut pw,
+            block_number,
+            &block_details.user_tx_proofs,
+            &block_details.default_user_tx_proof,
+            &deposit_process_proofs,
+            &block_details.world_state_process_proofs,
+            &block_details.world_state_revert_proofs,
+            &block_details.received_signature_proofs,
+            &block_details.default_simple_signature_proof,
+            &block_details.latest_account_process_proofs,
+            &block_details.block_headers_proof_siblings,
+            block_details.prev_block_header,
+        );
+
+        println!("start proving: block_proof");
+        let start = Instant::now();
+        let block_proof = block_circuit.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+        block_circuit.verify(block_proof)
+    }
+
     /// 最新の block を取得する.
     pub fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
         // let mut query = vec![];
@@ -827,6 +900,7 @@ impl Config {
         Ok(resp.block)
     }
 
+    /// block number が since より大きく until 以下の block を可能な限り全て取得する.
     /// Returns `(blocks, until_or_latest_block_number)`
     pub fn get_blocks(
         &self,
@@ -859,6 +933,22 @@ impl Config {
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
         Ok((resp.blocks, latest_block_number))
+    }
+
+    pub fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
+        let query = vec![("block_number", block_number.to_string())];
+
+        let request = reqwest::blocking::Client::new()
+            .get(self.aggregator_api_url("/block/detail"))
+            .query(&query);
+        let resp = request.send()?;
+        if resp.status() != 200 {
+            anyhow::bail!("{}", resp.text().unwrap());
+        }
+
+        let resp = resp.json::<ResponseBlockDetailQuery>()?;
+
+        Ok(resp.block_details)
     }
 
     pub fn sign_to_message(
@@ -902,10 +992,11 @@ impl Config {
             .filter(|(_, (_, proposed_block_number))| proposed_block_number.is_none());
         for (tx_hash, (_, proposed_block_number)) in pending_transactions {
             self.get_transaction_inclusion_witness(user_address, *tx_hash)
-                .map(|tx_inclusion_witness| {
+                .map(|(_tx_inclusion_witness, user_asset_inclusion_witness)| {
                     let latest_block = self.get_latest_block().unwrap();
-                    let block_hash = tx_inclusion_witness.root;
-                    let received_signature = self.sign_to_message(user_state.account, *block_hash);
+                    let proposed_world_state_root = user_asset_inclusion_witness.root;
+                    let received_signature =
+                        self.sign_to_message(user_state.account, *proposed_world_state_root);
                     self.send_received_signature(received_signature, *tx_hash);
 
                     *proposed_block_number = Some(latest_block.header.block_number + 1);
@@ -923,11 +1014,12 @@ impl Config {
         }
     }
 
+    /// Returns `()`
     pub fn get_transaction_inclusion_witness(
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
-    ) -> anyhow::Result<MerkleProof<F>> {
+    ) -> anyhow::Result<(MerkleProof<F>, SmtInclusionProof<F>)> {
         let query = vec![
             ("user_address", format!("{}", user_address)),
             ("tx_hash", format!("{}", tx_hash)),
@@ -941,9 +1033,9 @@ impl Config {
             anyhow::bail!("{}", resp.text().unwrap());
         }
 
-        let resp = resp.json::<ResponseTxWitnessQuery>()?;
+        let resp = resp.json::<ResponseTxReceiptQuery>()?;
 
-        Ok(resp.tx_inclusion_witness)
+        Ok((resp.tx_inclusion_witness, resp.user_asset_inclusion_witness))
     }
 
     pub fn send_received_signature(
@@ -995,14 +1087,14 @@ impl Config {
         }
 
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/tx/received"))
+            .get(self.aggregator_api_url("/asset/received"))
             .query(&query);
         let resp = request.send()?;
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
         }
 
-        let resp = resp.json::<ResponseTxReceivedQuery>()?;
+        let resp = resp.json::<ResponseAssetReceivedQuery>()?;
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
         Ok((resp.proofs, latest_block_number))
