@@ -106,15 +106,28 @@ impl Config {
     }
 
     pub fn set_aggregator_url(&self, aggregator_url: Option<String>) {
-        if let Some(aggregator_url) = aggregator_url {
-            let new_url = aggregator_url;
+        if let Some(new_url) = aggregator_url {
+            let version_info = Config::new(&new_url.clone()).check_health();
+            match version_info {
+                Ok(version_info) => {
+                    if version_info.name != AGGREGATOR_NAME.to_string() {
+                        println!("Given URL is invalid.");
+                        return;
+                    }
+                }
+                Err(_) => {
+                    println!("Given URL is invalid.");
+                    return;
+                }
+            }
+
             let _ = std::mem::replace::<String>(
                 &mut self.aggregator_url.lock().unwrap(),
                 new_url.clone(),
             );
-            println!("The new aggregator URL is {}", new_url);
+            println!("The new aggregator URL is {new_url} .");
         } else {
-            println!("The aggregator URL is {}", self.aggregator_api_url(""));
+            println!("The aggregator URL is {} .", self.aggregator_api_url(""));
         }
     }
 
@@ -436,20 +449,19 @@ impl Config {
         merge_witnesses
     }
 
-    pub fn check_health(&self) {
+    pub fn check_health(&self) -> anyhow::Result<ResponseCheckHealth> {
+        let api_path = "/";
         let resp = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url(""))
-            .send()
-            .expect("fail to fetch");
+            .get(self.aggregator_api_url(api_path))
+            .send()?;
         if resp.status() != 200 {
-            panic!("{:?}", &resp);
+            let error_message = resp.text()?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
-        let resp = resp
-            .json::<ResponseSingleMessage>()
-            .expect("fail to parse JSON");
+        let resp = resp.json::<ResponseCheckHealth>()?;
 
-        println!("{}", resp.message);
+        Ok(resp)
     }
 
     pub fn merge_and_purge_asset<
