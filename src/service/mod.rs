@@ -853,10 +853,6 @@ impl Config {
                     .unwrap()
             })
             .collect::<Vec<_>>();
-        dbg!(
-            &block_details.world_state_process_proofs,
-            &block_details.world_state_revert_proofs,
-        );
         let mut pw = PartialWitness::new();
         block_circuit.targets.set_witness::<F, C>(
             &mut pw,
@@ -1026,7 +1022,7 @@ impl Config {
         ];
 
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/tx/witness"))
+            .get(self.aggregator_api_url("/tx/receipt"))
             .query(&query);
         let resp = request.send()?;
         if resp.status() != 200 {
