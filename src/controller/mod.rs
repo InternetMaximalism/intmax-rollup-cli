@@ -242,17 +242,20 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let account = Account::new(*private_key);
                 service.register_account(account.public_key);
                 wallet.add_account(account);
-                let user_state = wallet
-                    .data
-                    .get_mut(&account.address)
-                    .expect("user address was not found in wallet");
 
-                let latest_block = service
-                    .get_latest_block()
-                    .expect("fail to fetch latest block");
-                // dbg!(latest_block.header.block_number);
-                let last_seen_block_number = latest_block.header.block_number;
-                user_state.last_seen_block_number = last_seen_block_number;
+                // NOTICE: account 作成前に token を受け取ることもできるので,
+                // 最初のブロックから同期する必要がある.
+                // let user_state = wallet
+                //     .data
+                //     .get_mut(&account.address)
+                //     .expect("user address was not found in wallet");
+                //
+                // let latest_block = service
+                //     .get_latest_block()
+                //     .expect("fail to fetch latest block");
+                // // dbg!(latest_block.header.block_number);
+                // let last_seen_block_number = latest_block.header.block_number;
+                // user_state.last_seen_block_number = last_seen_block_number;
 
                 println!("new account added: {}", account.address);
 

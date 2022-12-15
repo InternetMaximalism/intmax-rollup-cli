@@ -621,11 +621,19 @@ impl Config {
 
         let mut removed_assets = vec![];
         for (kind, output_amount) in output_asset_map {
-            let target_assets = user_state.assets.filter(kind).0;
+            let mut target_assets = user_state
+                .assets
+                .filter(kind)
+                .0
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            // 大きい amount をもつ leaf から処理する.
+            target_assets.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().reverse());
 
             let mut input_assets = vec![];
             let mut input_amount = 0;
-            for asset in target_assets.iter() {
+            for asset in target_assets {
                 input_amount += asset.1;
                 input_assets.push(asset);
 
@@ -683,9 +691,9 @@ impl Config {
             user_state
                 .assets
                 .0
-                .retain(|asset| input_assets.iter().all(|t| &asset != t));
+                .retain(|asset| input_assets.iter().all(|t| asset != t));
 
-            removed_assets.append(&mut input_assets.into_iter().cloned().collect::<Vec<_>>());
+            removed_assets.append(&mut input_assets);
         }
 
         let nonce = WrappedHashOut::rand();
