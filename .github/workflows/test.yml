@@ -22,7 +22,7 @@ jobs:
           # lfs: true
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: nightly-2022-09-08
           override: true
       - uses: actions-rs/cargo@v1
         with:
