@@ -241,12 +241,22 @@ impl Config {
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request /tx/send");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
             .post(self.aggregator_api_url("/tx/send"))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -963,9 +973,19 @@ impl Config {
     pub fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
         let query = vec![("block_number", block_number.to_string())];
 
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request /block/detail");
+            Instant::now()
+        };
         let request = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url("/block/detail"))
             .query(&query);
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         let resp = request.send()?;
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
