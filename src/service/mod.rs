@@ -136,12 +136,23 @@ impl Config {
             public_key: public_key.into(),
         };
         let body = serde_json::to_string(&payload).expect("fail to encode");
+        let api_path = "/account/register";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/account/register"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -159,12 +170,23 @@ impl Config {
     pub fn deposit_assets(&self, deposit_info: Vec<DepositInfo<F>>) {
         let payload = RequestDepositAddBody { deposit_info };
         let body = serde_json::to_string(&payload).expect("fail to encode");
+        let api_path = "/test/deposit/add";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/test/deposit/add"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -241,12 +263,23 @@ impl Config {
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");
+        let api_path = "/tx/send";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/tx/send"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -778,12 +811,23 @@ impl Config {
 
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
+        let api_path= "/tx/broadcast";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/tx/broadcast"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -802,12 +846,23 @@ impl Config {
     pub fn trigger_propose_block(&self) -> HashOut<F> {
         let body = r#"{}"#;
 
+        let api_path = "/block/propose";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/block/propose"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -822,12 +877,23 @@ impl Config {
     pub fn trigger_approve_block(&self) -> BlockInfo<F> {
         let body = r#"{}"#;
 
+        let api_path = "/block/approve";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/block/approve"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -912,9 +978,19 @@ impl Config {
         // let mut query = vec![];
 
         let api_path = "/block/latest";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
             .get(self.aggregator_api_url(api_path))
             .send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             let error_message = resp.text()?;
             anyhow::bail!("unexpected response from {}: {}", api_path, error_message);
@@ -946,10 +1022,21 @@ impl Config {
             query.push(("until", until.to_string()));
         }
 
+        let api_path = "/block";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/block"))
+            .get(self.aggregator_api_url(api_path))
             .query(&query);
         let resp = request.send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
         }
@@ -963,10 +1050,21 @@ impl Config {
     pub fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
         let query = vec![("block_number", block_number.to_string())];
 
+        let api_path = "/block/detail";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/block/detail"))
+            .get(self.aggregator_api_url(api_path))
             .query(&query);
         let resp = request.send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
         }
@@ -1050,10 +1148,21 @@ impl Config {
             ("tx_hash", format!("{}", tx_hash)),
         ];
 
+        let api_path = "/tx/receipt";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/tx/receipt"))
+            .get(self.aggregator_api_url(api_path))
             .query(&query);
         let resp = request.send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
         }
@@ -1075,12 +1184,23 @@ impl Config {
 
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
+        let api_path = "/signed-diff/send";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let resp = reqwest::blocking::Client::new()
-            .post(self.aggregator_api_url("/signed-diff/send"))
+            .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .expect("fail to post");
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             panic!("{}", resp.text().unwrap());
         }
@@ -1111,10 +1231,21 @@ impl Config {
             query.push(("until", format!("{}", until)));
         }
 
+        let api_path = "/asset/received";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("start proving: request {api_path}");
+            Instant::now()
+        };
         let request = reqwest::blocking::Client::new()
-            .get(self.aggregator_api_url("/asset/received"))
+            .get(self.aggregator_api_url(api_path))
             .query(&query);
         let resp = request.send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
         if resp.status() != 200 {
             anyhow::bail!("{}", resp.text().unwrap());
         }

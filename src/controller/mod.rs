@@ -66,8 +66,8 @@ enum SubCommand {
     Assets {
         #[structopt(long)]
         user_address: Option<Address<F>>,
-        #[structopt(long)]
-        verbose: bool,
+        // #[structopt(long)]
+        // verbose: bool,
     },
     /// Transaction
     #[structopt(name = "tx")]
@@ -334,7 +334,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
         }
         SubCommand::Assets {
             user_address,
-            verbose,
+            // verbose,
         } => {
             let user_address =
                 parse_address(&wallet, user_address).expect("user address was not given");
@@ -360,12 +360,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 }
             }
 
-            if verbose {
-                println!(
-                    "raw data: {}",
-                    serde_json::to_string(&user_state.assets).unwrap()
-                );
-            }
+            #[cfg(feature = "verbose")]
+            println!(
+                "raw data: {}",
+                serde_json::to_string(&user_state.assets).unwrap()
+            );
         }
         SubCommand::Transaction { tx_command } => match tx_command {
             TransactionCommand::Merge { user_address } => {
