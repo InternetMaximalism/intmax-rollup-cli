@@ -107,10 +107,10 @@ impl Config {
 
     pub fn set_aggregator_url(&self, aggregator_url: Option<String>) {
         if let Some(new_url) = aggregator_url {
-            let version_info = Config::new(&new_url.clone()).check_health();
+            let version_info = Config::new(&new_url).check_health();
             match version_info {
                 Ok(version_info) => {
-                    if version_info.name != AGGREGATOR_NAME.to_string() {
+                    if version_info.name != *AGGREGATOR_NAME {
                         println!("Given URL is invalid.");
                         return;
                     }
@@ -621,11 +621,17 @@ impl Config {
 
         let mut removed_assets = vec![];
         for (kind, output_amount) in output_asset_map {
-            let input_assets = user_state.assets.filter(kind);
+            let target_assets = user_state.assets.filter(kind).0;
 
+            let mut input_assets = vec![];
             let mut input_amount = 0;
-            for asset in input_assets.0.iter() {
+            for asset in target_assets.iter() {
                 input_amount += asset.1;
+                input_assets.push(asset);
+
+                if output_amount <= input_amount {
+                    break;
+                }
             }
 
             if output_amount > input_amount {
@@ -651,7 +657,7 @@ impl Config {
             }
 
             // input に含めた asset を取り除く
-            for input_asset in input_assets.0.iter() {
+            for input_asset in input_assets.iter() {
                 let rest_amount = user_state
                     .asset_tree
                     .find(
@@ -674,9 +680,12 @@ impl Config {
                 purge_input_witness.push(input_witness);
             }
 
-            user_state.assets.remove(kind);
+            user_state
+                .assets
+                .0
+                .retain(|asset| input_assets.iter().all(|t| &asset != t));
 
-            removed_assets.append(&mut input_assets.0.into_iter().collect::<Vec<_>>());
+            removed_assets.append(&mut input_assets.into_iter().cloned().collect::<Vec<_>>());
         }
 
         let nonce = WrappedHashOut::rand();
