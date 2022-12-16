@@ -20,10 +20,11 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        asset::{Asset, ReceivedAssetProof},
+        asset::{Asset, ReceivedAssetProof, TokenKind},
         block_header::get_block_hash,
         circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
         gadgets::merge::MergeProof,
+        tree::user_asset::UserAssetTree,
     },
     zkdsa::{
         account::{Account, Address, PublicKey},
@@ -240,11 +241,11 @@ impl Config {
             );
             // dbg!(serde_json::to_string(&public_inputs).unwrap());
 
-            println!("start proving: user_tx_proof");
+                println!("start proving: user_tx_proof");
             let start = Instant::now();
             let user_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-            let end = start.elapsed();
-            println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+                let end = start.elapsed();
+                println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
             // dbg!(&sender1_tx_proof.public_inputs);
 
@@ -378,108 +379,6 @@ impl Config {
     //     merge_witnesses
     // }
 
-    pub fn merge_received_asset<
-        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
-        R: RootData<WrappedHashOut<F>> + Clone,
-    >(
-        &self,
-        received_asset_witness: Vec<ReceivedAssetProof<F>>,
-        _user_address: Address<F>,
-        user_state: &mut UserState<D, R>,
-    ) -> Vec<MergeProof<F>> {
-        let mut merge_witnesses = vec![];
-        for witness in received_asset_witness {
-            // let pseudo_tx_hash = HashOut::ZERO;
-            let tx_hash = witness.diff_tree_inclusion_proof.1.value;
-            let asset_root = witness.diff_tree_inclusion_proof.2.value;
-
-            let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
-            let merge_key = if witness.is_deposit {
-                PoseidonHash::two_to_one(*tx_hash, block_hash).into()
-            } else {
-                tx_hash
-            };
-
-            // sender が cancel した transaction は受け取ることができない.
-            {
-                let is_valid_confirmed_block_number =
-                    witness.latest_account_tree_inclusion_proof.value.to_u32()
-                        == witness.diff_tree_inclusion_proof.0.block_number;
-                if !witness.is_deposit && !is_valid_confirmed_block_number {
-                    println!("The following transaction was canceled: {}", tx_hash);
-                    continue;
-                }
-            }
-
-            // 同じ transaction を二度 merge することはできない.
-            {
-                let asset_tree = PoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    user_state.asset_tree.roots_db.clone(),
-                );
-                let old_asset_root_with_merge_key = asset_tree.get(&merge_key).unwrap();
-                if old_asset_root_with_merge_key != Default::default() {
-                    println!("The following transaction has already merged: {}", tx_hash);
-                    continue;
-                }
-            }
-
-            for asset in witness.assets {
-                user_state.assets.add(asset.kind, asset.amount, merge_key);
-                user_state
-                    .asset_tree
-                    .set(
-                        merge_key,
-                        asset.kind.contract_address.to_hash_out().into(),
-                        asset.kind.variable_index.to_hash_out().into(),
-                        HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
-                    )
-                    .unwrap();
-            }
-
-            // witness.assets から asset_root が計算されることを検証する.
-            assert_eq!(
-                user_state.asset_tree.get_asset_root(&merge_key).unwrap(),
-                asset_root
-            );
-
-            let merge_process_proof = {
-                // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
-                let mut asset_tree = PoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-                );
-                let asset_root_with_merge_key = asset_tree
-                    .set(merge_key, Default::default())
-                    .unwrap()
-                    .old_value;
-
-                if cfg!(debug_assertion) {
-                    assert_eq!(
-                        *asset_root_with_merge_key,
-                        PoseidonHash::two_to_one(*asset_root, *merge_key)
-                    );
-                }
-
-                asset_tree
-                    .set(merge_key, asset_root_with_merge_key)
-                    .unwrap()
-            };
-            // dbg!(&merge_process_proof);
-
-            let merge_proof = MergeProof {
-                is_deposit: witness.is_deposit,
-                diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
-                merge_process_proof,
-                latest_account_tree_inclusion_proof: witness.latest_account_tree_inclusion_proof,
-                nonce: witness.nonce,
-            };
-            merge_witnesses.push(merge_proof);
-        }
-
-        merge_witnesses
-    }
-
     pub fn check_health(&self) -> anyhow::Result<ResponseCheckHealth> {
         let api_path = "/";
         let resp = reqwest::blocking::Client::new()
@@ -495,6 +394,121 @@ impl Config {
         Ok(resp)
     }
 
+    pub fn sync_sent_transaction<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+        R: RootData<WrappedHashOut<F>> + Clone,
+    >(
+        &self,
+        user_state: &mut UserState<D, R>,
+        user_address: Address<F>,
+    ) {
+            let (mut raw_merge_witnesses, last_seen_block_number) = self
+                .get_merge_transaction_witness(
+                    user_address,
+                    Some(user_state.last_seen_block_number),
+                    None,
+                )
+                .unwrap_or_else(|err| {
+                    dbg!(err);
+
+                    (vec![], user_state.last_seen_block_number)
+                });
+            let (blocks, _) = self
+                .get_blocks(
+                    Some(user_state.last_seen_block_number),
+                    Some(last_seen_block_number),
+                )
+                .unwrap_or_else(|err| {
+                    dbg!(err);
+
+                    (vec![], last_seen_block_number)
+                });
+
+            // 自分が cancel した transaction に含まれる asset を自分の残高に反映させる.
+            {
+                let canceled_transactions = blocks
+                    .iter()
+                    .flat_map(|block| {
+                        block
+                            .address_list
+                            .iter()
+                            .zip(block.transactions.iter())
+                            .filter(|(v, _)| v.sender_address == user_address && !v.is_valid)
+                        // .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                // dbg!(&canceled_transactions
+                //     .iter()
+                //     .map(|v| v.1.to_string())
+                //     .collect::<Vec<_>>());
+                // dbg!(&user_state
+                //     .sent_transactions
+                //     .iter()
+                //     .map(|v| v.0.to_string())
+                //     .collect::<Vec<_>>());
+
+                // `sent_transactions` の中で cancel した transaction であるものを列挙する.
+                let recovered_assets = canceled_transactions
+                    .iter()
+                    .filter_map(|(_, tx_hash)| {
+                        // dbg!(tx_hash.to_string());
+
+                        user_state.sent_transactions.get(tx_hash)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for assets in recovered_assets {
+                    // dbg!(&assets);
+                    for asset in assets.0 {
+                        // 既に recover されている asset を再び感情しない.
+                        let old_amount = user_state
+                            .asset_tree
+                            .find(
+                                &asset.2,
+                                &asset.0.contract_address.to_hash_out().into(),
+                                &asset.0.variable_index.to_hash_out().into(),
+                            )
+                            .unwrap()
+                            .2
+                            .value;
+                        if old_amount != Default::default() {
+                            continue;
+                        }
+
+                        user_state
+                            .asset_tree
+                            .set(
+                                asset.2,
+                                asset.0.contract_address.to_hash_out().into(),
+                                asset.0.variable_index.to_hash_out().into(),
+                                HashOut::from_partial(&[F::from_canonical_u64(asset.1)]).into(),
+                            )
+                            .unwrap();
+                        user_state.assets.add(asset.0, asset.1, asset.2);
+                    }
+                }
+
+                // cancel した transaction は後で署名することもないので削除する.
+                for (_, target_tx_hash) in canceled_transactions {
+                    user_state.sent_transactions.remove(target_tx_hash);
+                }
+
+                // proposed_block_number が last_seen_block_number 以下のものを削除する.
+                user_state.sent_transactions.retain(|_, v| {
+                    if let Some(proposed_block_number) = v.1 {
+                        proposed_block_number > last_seen_block_number
+                    } else {
+                        true
+                    }
+                });
+            }
+
+            user_state
+                .rest_merge_witnesses
+                .append(&mut raw_merge_witnesses);
+            user_state.last_seen_block_number = last_seen_block_number;
+        }
+
     pub fn merge_and_purge_asset<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
@@ -504,234 +518,28 @@ impl Config {
         user_address: Address<F>,
         purge_diffs: &[(Address<F>, Asset<F>)],
     ) {
-        let (raw_merge_witnesses, last_seen_block_number) = self
-            .get_merge_transaction_witness(
-                user_address,
-                Some(user_state.last_seen_block_number),
-                None,
-            )
-            .unwrap_or_else(|err| {
-                dbg!(err);
-
-                (vec![], user_state.last_seen_block_number)
-            });
-        let (blocks, _) = self
-            .get_blocks(
-                Some(user_state.last_seen_block_number),
-                Some(last_seen_block_number),
-            )
-            .unwrap_or_else(|err| {
-                dbg!(err);
-
-                (vec![], last_seen_block_number)
-            });
-
-        // 自分が cancel した transaction に含まれる asset を自分の残高に反映させる.
-        {
-            let canceled_transactions = blocks
-                .iter()
-                .flat_map(|block| {
-                    block
-                        .address_list
-                        .iter()
-                        .zip(block.transactions.iter())
-                        .filter(|(v, _)| v.sender_address == user_address && !v.is_valid)
-                    // .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            // dbg!(&canceled_transactions
-            //     .iter()
-            //     .map(|v| v.1.to_string())
-            //     .collect::<Vec<_>>());
-            // dbg!(&user_state
-            //     .sent_transactions
-            //     .iter()
-            //     .map(|v| v.0.to_string())
-            //     .collect::<Vec<_>>());
-
-            // `sent_transactions` の中で cancel した transaction であるものを列挙する.
-            let recovered_assets = canceled_transactions
-                .iter()
-                .filter_map(|(_, tx_hash)| {
-                    // dbg!(tx_hash.to_string());
-
-                    user_state.sent_transactions.get(tx_hash)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            for assets in recovered_assets {
-                // dbg!(&assets);
-                for asset in assets.0 {
-                    // 既に recover されている asset を再び感情しない.
-                    let old_amount = user_state
-                        .asset_tree
-                        .find(
-                            &asset.2,
-                            &asset.0.contract_address.to_hash_out().into(),
-                            &asset.0.variable_index.to_hash_out().into(),
-                        )
-                        .unwrap()
-                        .2
-                        .value;
-                    if old_amount != Default::default() {
-                        continue;
-                    }
-
-                    user_state
-                        .asset_tree
-                        .set(
-                            asset.2,
-                            asset.0.contract_address.to_hash_out().into(),
-                            asset.0.variable_index.to_hash_out().into(),
-                            HashOut::from_partial(&[F::from_canonical_u64(asset.1)]).into(),
-                        )
-                        .unwrap();
-                    user_state.assets.add(asset.0, asset.1, asset.2);
-                }
-            }
-
-            // cancel した transaction は後で署名することもないので削除する.
-            for (_, target_tx_hash) in canceled_transactions {
-                user_state.sent_transactions.remove(target_tx_hash);
-            }
-
-            // proposed_block_number が last_seen_block_number 以下のものを削除する.
-            user_state.sent_transactions.retain(|_, v| {
-                if let Some(proposed_block_number) = v.1 {
-                    proposed_block_number > last_seen_block_number
-                } else {
-                    true
-                }
-            });
-        }
-
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let mut added_merge_witnesses =
-            self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
-        user_state
-            .rest_merge_witnesses
-            .append(&mut added_merge_witnesses);
-        user_state.last_seen_block_number = last_seen_block_number;
-
-        // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
+        let dequeued_len = N_TXS.min(user_state.rest_merge_witnesses.len());
+        let raw_merge_witnesses = user_state.rest_merge_witnesses[0..dequeued_len].to_vec();
+        let (merge_witnesses, middle_user_asset_root) =
+            calc_merge_witnesses(user_state, &raw_merge_witnesses);
         // dbg!(&middle_user_asset_root);
 
-        // 人に渡す asset から構成される tree
-        let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
-            NodeDataMemory::default(),
-            RootDataTmp::default(),
+        let (purge_input_witness, purge_output_witness, removed_assets, new_user_asset_root) =
+            calc_purge_witnesses(
+                user_state,
+                user_address,
+                purge_diffs,
+                middle_user_asset_root,
         );
-
-        let mut purge_input_witness = vec![];
-        let mut purge_output_witness = vec![];
-        let mut output_asset_map = HashMap::new();
-        for (receiver_address, output_asset) in purge_diffs {
-            // dbg!(receiver_address.to_string(), output_asset);
-            let output_witness = tx_diff_tree
-                .set(
-                    receiver_address.to_hash_out().into(),
-                    output_asset.kind.contract_address.to_hash_out().into(),
-                    output_asset.kind.variable_index.to_hash_out().into(),
-                    HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
-                )
-                .unwrap();
-
-            purge_output_witness.push(output_witness);
-
-            // token の種類ごとに output amount を合計する
-            let old_amount: u64 = output_asset_map
-                .get(&output_asset.kind)
-                .cloned()
-                .unwrap_or_default();
-            output_asset_map.insert(output_asset.kind, old_amount + output_asset.amount);
-        }
-
-        let mut removed_assets = vec![];
-        for (kind, output_amount) in output_asset_map {
-            let mut target_assets = user_state
-                .assets
-                .filter(kind)
-                .0
-                .into_iter()
-                .collect::<Vec<_>>();
-
-            // 大きい amount をもつ leaf から処理する.
-            target_assets.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().reverse());
-
-            let mut input_assets = vec![];
-            let mut input_amount = 0;
-            for asset in target_assets {
-                input_amount += asset.1;
-                input_assets.push(asset);
-
-                if output_amount <= input_amount {
-                    break;
-                }
-            }
-
-            if output_amount > input_amount {
-                panic!("output asset amount is too much");
-            }
-
-            // input (所有している分) と output (人に渡す分) の差額を自身に渡す
-            if input_amount > output_amount {
-                let rest_asset = Asset {
-                    kind,
-                    amount: input_amount - output_amount,
-                };
-                let rest_witness = tx_diff_tree
-                    .set(
-                        user_address.to_hash_out().into(),
-                        rest_asset.kind.contract_address.to_hash_out().into(),
-                        rest_asset.kind.variable_index.to_hash_out().into(),
-                        HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
-                    )
-                    .unwrap();
-
-                purge_output_witness.push(rest_witness);
-            }
-
-            // input に含めた asset を取り除く
-            for input_asset in input_assets.iter() {
-                let rest_amount = user_state
-                    .asset_tree
-                    .find(
-                        &input_asset.2, // merge_key
-                        &input_asset.0.contract_address.to_hash_out().into(),
-                        &input_asset.0.variable_index.to_hash_out().into(),
-                    )
-                    .unwrap();
-                // dbg!(&rest_amount);
-                assert_ne!(rest_amount.2.value, WrappedHashOut::ZERO);
-                let input_witness = user_state
-                    .asset_tree
-                    .set(
-                        input_asset.2, // merge_key
-                        input_asset.0.contract_address.to_hash_out().into(),
-                        input_asset.0.variable_index.to_hash_out().into(),
-                        HashOut::ZERO.into(),
-                    )
-                    .unwrap();
-                purge_input_witness.push(input_witness);
-            }
-
-            user_state
-                .assets
-                .0
-                .retain(|asset| input_assets.iter().all(|t| asset != t));
-
-            removed_assets.append(&mut input_assets);
-        }
-
-        let dequeued_len = N_TXS.min(user_state.rest_merge_witnesses.len());
-        let merge_witnesses = user_state.rest_merge_witnesses[0..dequeued_len].to_vec();
 
         let nonce = WrappedHashOut::rand();
 
-        // NOTICE: この間に処理を中断すると, サーバーとの同期が取れなくなり,
-        // そのアカウントは使用できなくなる.
+        // NOTICE: If you interrupt execution, this account may not be operable in the future.
+        println!("sending your transaction to operator...");
+        println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
         {
             let transaction = self.send_assets(
                 user_state.account,
@@ -743,24 +551,47 @@ impl Config {
             );
             // dbg!(transaction.diff_root);
 
-            // send API に含めた merge transaction は削除する.
+            // nodes_db への cache は済んでいるので, root を変更するだけ.
             user_state
-                .rest_merge_witnesses
-                .retain(|v| !merge_witnesses.iter().any(|w| v == w));
+                .asset_tree
+                .change_root(new_user_asset_root)
+                .unwrap();
+
+            // purge input に含めた asset を取り除く
+            user_state
+                .assets
+                .0
+                .retain(|asset| removed_assets.iter().all(|t| asset != t));
 
             if !purge_diffs.is_empty() {
                 // 後で署名するために保管する.
                 user_state
                     .sent_transactions
                     .insert(transaction.tx_hash, (removed_assets, None));
-                // 受け取り人にトランアクションの内容を通知するために保管する.
+                // 受信者にトランザクションの内容を通知するために保管する.
                 user_state.transaction_receipts.push((
                     transaction.tx_hash,
                     purge_diffs.to_vec(),
                     nonce,
                 ));
             }
+
+            // merge に含めた asset を反映する.
+            for (raw_merge_witness, merge_witness) in
+                raw_merge_witnesses.iter().zip(merge_witnesses)
+            {
+                let merge_key = merge_witness.merge_process_proof.new_key;
+                for asset in raw_merge_witness.assets.iter() {
+                    user_state.assets.add(asset.kind, asset.amount, merge_key);
+                }
+            }
+
+            // send API に含めた merge transaction は削除する.
+            user_state
+                .rest_merge_witnesses
+                .retain(|v| !raw_merge_witnesses.iter().any(|w| v == w));
         }
+        println!("Complete to send your transaction.");
     }
 
     pub fn broadcast_stored_receipts<
@@ -1303,4 +1134,241 @@ impl Config {
 
         Ok((resp.proofs, latest_block_number))
     }
+}
+
+/// Returns `(merge_witnesses, middle_user_asset_root)`
+pub fn calc_merge_witnesses<
+    D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+    R: RootData<WrappedHashOut<F>> + Clone,
+>(
+    // &self,
+    user_state: &mut UserState<D, R>,
+    received_asset_witnesses: &[ReceivedAssetProof<F>],
+) -> (Vec<MergeProof<F>>, WrappedHashOut<F>) {
+    // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
+    let mut asset_tree = UserAssetTree::new(
+        user_state.asset_tree.nodes_db.clone(),
+        RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
+    );
+
+    let mut merge_witnesses = vec![];
+    for received_asset_witness in received_asset_witnesses.iter().cloned() {
+        let witness = received_asset_witness;
+        // let pseudo_tx_hash = HashOut::ZERO;
+        let tx_hash = witness.diff_tree_inclusion_proof.1.value;
+        let asset_root = witness.diff_tree_inclusion_proof.2.value;
+
+        let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
+        let merge_key = if witness.is_deposit {
+            PoseidonHash::two_to_one(*tx_hash, block_hash).into()
+        } else {
+            tx_hash
+        };
+
+        // sender が cancel した transaction は受け取ることができない.
+        {
+            let is_valid_confirmed_block_number =
+                witness.latest_account_tree_inclusion_proof.value.to_u32()
+                    == witness.diff_tree_inclusion_proof.0.block_number;
+            if !witness.is_deposit && !is_valid_confirmed_block_number {
+                println!("The following transaction was canceled: {}", tx_hash);
+                continue;
+            }
+        }
+
+        // 同じ transaction を二度 merge することはできない.
+        {
+            let asset_tree = PoseidonSparseMerkleTree::new(
+                user_state.asset_tree.nodes_db.clone(),
+                user_state.asset_tree.roots_db.clone(),
+            );
+            let old_asset_root_with_merge_key = asset_tree.get(&merge_key).unwrap();
+            if old_asset_root_with_merge_key != Default::default() {
+                println!("The following transaction has already merged: {}", tx_hash);
+                continue;
+            }
+        }
+
+        for asset in witness.assets {
+            asset_tree
+                .set(
+                    merge_key,
+                    asset.kind.contract_address.to_hash_out().into(),
+                    asset.kind.variable_index.to_hash_out().into(),
+                    HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
+                )
+                .unwrap();
+        }
+
+        // witness.assets から asset_root が計算されることを検証する.
+        assert_eq!(asset_tree.get_asset_root(&merge_key).unwrap(), asset_root);
+
+        let merge_process_proof = {
+            let mut asset_tree = PoseidonSparseMerkleTree::new(
+                asset_tree.nodes_db.clone(),
+                RootDataTmp::from(asset_tree.get_root().unwrap()),
+            );
+            let asset_root_with_merge_key = asset_tree
+                .set(merge_key, Default::default())
+                .unwrap()
+                .old_value;
+
+            if cfg!(debug_assertion) {
+                assert_eq!(
+                    *asset_root_with_merge_key,
+                    PoseidonHash::two_to_one(*asset_root, *merge_key)
+                );
+            }
+
+            asset_tree
+                .set(merge_key, asset_root_with_merge_key)
+                .unwrap()
+        };
+        // dbg!(&merge_process_proof);
+
+        let merge_witness = MergeProof {
+            is_deposit: witness.is_deposit,
+            diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
+            merge_process_proof,
+            latest_account_tree_inclusion_proof: witness.latest_account_tree_inclusion_proof,
+            nonce: witness.nonce,
+        };
+
+        merge_witnesses.push(merge_witness);
+    }
+
+    let middle_user_asset_root = asset_tree.get_root().unwrap();
+
+    (merge_witnesses, middle_user_asset_root)
+}
+
+/// Returns `(purge_input_witness, purge_output_witness, removed_assets, new_user_asset_root)`
+#[allow(clippy::complexity)]
+fn calc_purge_witnesses<
+    D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+    R: RootData<WrappedHashOut<F>> + Clone,
+>(
+    user_state: &mut UserState<D, R>,
+    user_address: Address<F>,
+    purge_diffs: &[(Address<F>, Asset<F>)],
+    middle_user_asset_root: WrappedHashOut<F>,
+) -> (
+    Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
+    WrappedHashOut<F>,
+) {
+    let mut asset_tree = UserAssetTree::new(
+        user_state.asset_tree.nodes_db.clone(),
+        RootDataTmp::from(middle_user_asset_root),
+    );
+
+    // 人に渡す asset から構成される tree
+    let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+        NodeDataMemory::default(),
+        RootDataTmp::default(),
+    );
+
+    let mut purge_output_witness = vec![];
+    let mut output_asset_map = HashMap::new();
+    for (receiver_address, output_asset) in purge_diffs {
+        // dbg!(receiver_address.to_string(), output_asset);
+        let output_witness = tx_diff_tree
+            .set(
+                receiver_address.to_hash_out().into(),
+                output_asset.kind.contract_address.to_hash_out().into(),
+                output_asset.kind.variable_index.to_hash_out().into(),
+                HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
+            )
+            .unwrap();
+
+        purge_output_witness.push(output_witness);
+
+        // token の種類ごとに output amount を合計する
+        let old_amount: u64 = output_asset_map
+            .get(&output_asset.kind)
+            .cloned()
+            .unwrap_or_default();
+        output_asset_map.insert(output_asset.kind, old_amount + output_asset.amount);
+    }
+
+    let mut purge_input_witness = vec![];
+    let mut removed_assets = vec![];
+    for (kind, output_amount) in output_asset_map {
+        let mut target_assets = user_state
+            .assets
+            .filter(kind)
+            .0
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // 大きい amount をもつ leaf から処理する.
+        target_assets.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().reverse());
+
+        let mut input_assets = vec![];
+        let mut input_amount = 0;
+        for asset in target_assets {
+            input_amount += asset.1;
+            input_assets.push(asset);
+
+            if output_amount <= input_amount {
+                break;
+            }
+        }
+
+        if output_amount > input_amount {
+            panic!("output asset amount is too much");
+        }
+
+        // input (所有している分) と output (人に渡す分) の差額を自身に渡す
+        if input_amount > output_amount {
+            let rest_asset = Asset {
+                kind,
+                amount: input_amount - output_amount,
+            };
+            let rest_witness = tx_diff_tree
+                .set(
+                    user_address.to_hash_out().into(),
+                    rest_asset.kind.contract_address.to_hash_out().into(),
+                    rest_asset.kind.variable_index.to_hash_out().into(),
+                    HashOut::from_partial(&[F::from_canonical_u64(rest_asset.amount)]).into(),
+                )
+                .unwrap();
+
+            purge_output_witness.push(rest_witness);
+        }
+
+        // input に含めた asset を取り除く
+        for input_asset in input_assets.iter() {
+            let rest_amount = asset_tree
+                .find(
+                    &input_asset.2, // merge_key
+                    &input_asset.0.contract_address.to_hash_out().into(),
+                    &input_asset.0.variable_index.to_hash_out().into(),
+                )
+                .unwrap();
+            // dbg!(&rest_amount);
+            assert_ne!(rest_amount.2.value, WrappedHashOut::ZERO);
+            let input_witness = asset_tree
+                .set(
+                    input_asset.2, // merge_key
+                    input_asset.0.contract_address.to_hash_out().into(),
+                    input_asset.0.variable_index.to_hash_out().into(),
+                    HashOut::ZERO.into(),
+                )
+                .unwrap();
+            purge_input_witness.push(input_witness);
+        }
+
+        removed_assets.append(&mut input_assets);
+    }
+
+    let new_user_asset_root = asset_tree.get_root().unwrap();
+
+    (
+        purge_input_witness,
+        purge_output_witness,
+        removed_assets,
+        new_user_asset_root,
+    )
 }

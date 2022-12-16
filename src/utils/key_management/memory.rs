@@ -7,9 +7,8 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        asset::{Asset, TokenKind},
+        asset::{Asset, TokenKind, ReceivedAssetProof},
         circuits::MergeAndPurgeTransitionPublicInputs,
-        gadgets::merge::MergeProof,
         tree::user_asset::UserAssetTree,
     },
     zkdsa::account::{Account, Address},
@@ -39,7 +38,7 @@ pub struct UserState<
     pub pending_transactions:
         HashMap<WrappedHashOut<F>, Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>>,
 
-    pub rest_merge_witnesses: Vec<MergeProof<F>>,
+    pub rest_merge_witnesses: Vec<ReceivedAssetProof<F>>,
 
     /// the set consisting of `(tx_hash, removed_assets, block_number)`.
     #[allow(clippy::type_complexity)]
@@ -75,7 +74,7 @@ pub struct SerializableUserState {
     //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
     // )>,
     #[serde(default)]
-    pub rest_merge_witnesses: Vec<MergeProof<F>>,
+    pub rest_merge_witnesses: Vec<ReceivedAssetProof<F>>,
 
     #[serde(default)]
     pub sent_transactions: Vec<(
@@ -233,7 +232,7 @@ impl Wallet for WalletOnMemory {
     fn add_account(&mut self, account: Account<F>) -> anyhow::Result<()> {
         let asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataMemory::default());
         let old_account = self.data.get(&account.address);
-        if old_account.is_none() {
+        if old_account.is_some() {
             anyhow::bail!("designated address was already used");
         }
 

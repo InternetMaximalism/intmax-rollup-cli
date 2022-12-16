@@ -378,18 +378,35 @@ pub fn invoke_command() -> anyhow::Result<()> {
             TransactionCommand::Merge { user_address } => {
                 let user_address =
                     parse_address(&wallet, user_address).expect("user address was not given");
-                let user_state = wallet
-                    .data
-                    .get_mut(&user_address)
-                    .expect("user address was not found in wallet");
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
 
-                service.merge_and_purge_asset(user_state, user_address, &[]);
+                    service.sync_sent_transaction(user_state, user_address);
 
-                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                let mut file = File::create(wallet_file_path.clone())?;
-                write!(file, "{}", encoded_wallet)?;
-                file.flush()?;
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
+                }
+
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    service.merge_and_purge_asset(user_state, user_address, &[]);
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
+                }
 
                 service.trigger_propose_block();
                 // service.sign_proposed_block(user_state, user_address);
@@ -404,6 +421,21 @@ pub fn invoke_command() -> anyhow::Result<()> {
             } => {
                 let user_address =
                     parse_address(&wallet, user_address).expect("user address was not given");
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    service.sync_sent_transaction(user_state, user_address);
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
+                }
+
                 {
                     let user_state = wallet
                         .data
