@@ -138,7 +138,7 @@ impl Config {
         let api_path = "/account/register";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -172,7 +172,7 @@ impl Config {
         let api_path = "/test/deposit/add";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -241,11 +241,17 @@ impl Config {
             );
             // dbg!(serde_json::to_string(&public_inputs).unwrap());
 
+            #[cfg(feature = "verbose")]
+            let start = {
                 println!("start proving: user_tx_proof");
-            let start = Instant::now();
+                Instant::now()
+            };
             let user_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
+            #[cfg(feature = "verbose")]
+            {
                 let end = start.elapsed();
                 println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+            }
 
             // dbg!(&sender1_tx_proof.public_inputs);
 
@@ -265,7 +271,7 @@ impl Config {
         let api_path = "/tx/send";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -402,14 +408,14 @@ impl Config {
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
     ) {
-            let (mut raw_merge_witnesses, last_seen_block_number) = self
-                .get_merge_transaction_witness(
-                    user_address,
-                    Some(user_state.last_seen_block_number),
-                    None,
-                )
-                .unwrap_or_else(|err| {
-                    dbg!(err);
+        let (mut raw_merge_witnesses, last_seen_block_number) = self
+            .get_merge_transaction_witness(
+                user_address,
+                Some(user_state.last_seen_block_number),
+                None,
+            )
+            .unwrap_or_else(|err| {
+                dbg!(err);
 
                 (vec![], user_state.last_seen_block_number)
             });
@@ -421,86 +427,86 @@ impl Config {
             .unwrap_or_else(|err| {
                 dbg!(err);
 
-                    (vec![], last_seen_block_number)
-                });
+                (vec![], last_seen_block_number)
+            });
 
-            // 自分が cancel した transaction に含まれる asset を自分の残高に反映させる.
-            {
-                let canceled_transactions = blocks
-                    .iter()
-                    .flat_map(|block| {
-                        block
-                            .address_list
-                            .iter()
-                            .zip(block.transactions.iter())
-                            .filter(|(v, _)| v.sender_address == user_address && !v.is_valid)
-                        // .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                // dbg!(&canceled_transactions
-                //     .iter()
-                //     .map(|v| v.1.to_string())
-                //     .collect::<Vec<_>>());
-                // dbg!(&user_state
-                //     .sent_transactions
-                //     .iter()
-                //     .map(|v| v.0.to_string())
-                //     .collect::<Vec<_>>());
+        // 自分が cancel した transaction に含まれる asset を自分の残高に反映させる.
+        {
+            let canceled_transactions = blocks
+                .iter()
+                .flat_map(|block| {
+                    block
+                        .address_list
+                        .iter()
+                        .zip(block.transactions.iter())
+                        .filter(|(v, _)| v.sender_address == user_address && !v.is_valid)
+                    // .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            // dbg!(&canceled_transactions
+            //     .iter()
+            //     .map(|v| v.1.to_string())
+            //     .collect::<Vec<_>>());
+            // dbg!(&user_state
+            //     .sent_transactions
+            //     .iter()
+            //     .map(|v| v.0.to_string())
+            //     .collect::<Vec<_>>());
 
-                // `sent_transactions` の中で cancel した transaction であるものを列挙する.
-                let recovered_assets = canceled_transactions
-                    .iter()
-                    .filter_map(|(_, tx_hash)| {
-                        // dbg!(tx_hash.to_string());
+            // `sent_transactions` の中で cancel した transaction であるものを列挙する.
+            let recovered_assets = canceled_transactions
+                .iter()
+                .filter_map(|(_, tx_hash)| {
+                    // dbg!(tx_hash.to_string());
 
-                        user_state.sent_transactions.get(tx_hash)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for assets in recovered_assets {
-                    // dbg!(&assets);
-                    for asset in assets.0 {
-                        // 既に recover されている asset を再び感情しない.
-                        let old_amount = user_state
-                            .asset_tree
-                            .find(
-                                &asset.2,
-                                &asset.0.contract_address.to_hash_out().into(),
-                                &asset.0.variable_index.to_hash_out().into(),
-                            )
-                            .unwrap()
-                            .2
-                            .value;
-                        if old_amount != Default::default() {
-                            continue;
-                        }
-
-                        user_state
-                            .asset_tree
-                            .set(
-                                asset.2,
-                                asset.0.contract_address.to_hash_out().into(),
-                                asset.0.variable_index.to_hash_out().into(),
-                                HashOut::from_partial(&[F::from_canonical_u64(asset.1)]).into(),
-                            )
-                            .unwrap();
-                        user_state.assets.add(asset.0, asset.1, asset.2);
+                    user_state.sent_transactions.get(tx_hash)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for assets in recovered_assets {
+                // dbg!(&assets);
+                for asset in assets.0 {
+                    // 既に recover されている asset を再び感情しない.
+                    let old_amount = user_state
+                        .asset_tree
+                        .find(
+                            &asset.2,
+                            &asset.0.contract_address.to_hash_out().into(),
+                            &asset.0.variable_index.to_hash_out().into(),
+                        )
+                        .unwrap()
+                        .2
+                        .value;
+                    if old_amount != Default::default() {
+                        continue;
                     }
-                }
 
-                // cancel した transaction は後で署名することもないので削除する.
-                for (_, target_tx_hash) in canceled_transactions {
-                    user_state.sent_transactions.remove(target_tx_hash);
+                    user_state
+                        .asset_tree
+                        .set(
+                            asset.2,
+                            asset.0.contract_address.to_hash_out().into(),
+                            asset.0.variable_index.to_hash_out().into(),
+                            HashOut::from_partial(&[F::from_canonical_u64(asset.1)]).into(),
+                        )
+                        .unwrap();
+                    user_state.assets.add(asset.0, asset.1, asset.2);
                 }
+            }
 
-                // proposed_block_number が last_seen_block_number 以下のものを削除する.
-                user_state.sent_transactions.retain(|_, v| {
-                    if let Some(proposed_block_number) = v.1 {
-                        proposed_block_number > last_seen_block_number
-                    } else {
-                        true
-                    }
-                });
+            // cancel した transaction は後で署名することもないので削除する.
+            for (_, target_tx_hash) in canceled_transactions {
+                user_state.sent_transactions.remove(target_tx_hash);
+            }
+
+            // proposed_block_number が last_seen_block_number 以下のものを削除する.
+            user_state.sent_transactions.retain(|_, v| {
+                if let Some(proposed_block_number) = v.1 {
+                    proposed_block_number > last_seen_block_number
+                } else {
+                    true
+                }
+            });
         }
 
         user_state
@@ -533,7 +539,7 @@ impl Config {
                 user_address,
                 purge_diffs,
                 middle_user_asset_root,
-        );
+            );
 
         let nonce = WrappedHashOut::rand();
 
@@ -693,7 +699,7 @@ impl Config {
         let api_path = "/tx/broadcast";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -728,7 +734,7 @@ impl Config {
         let api_path = "/block/propose";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -759,7 +765,7 @@ impl Config {
         let api_path = "/block/approve";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -859,7 +865,7 @@ impl Config {
         let api_path = "/block/latest";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -904,7 +910,7 @@ impl Config {
         let api_path = "/block";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -932,7 +938,7 @@ impl Config {
         let api_path = "/block/detail";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -1030,7 +1036,7 @@ impl Config {
         let api_path = "/tx/receipt";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -1066,7 +1072,7 @@ impl Config {
         let api_path = "/signed-diff/send";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -1113,7 +1119,7 @@ impl Config {
         let api_path = "/asset/received";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
