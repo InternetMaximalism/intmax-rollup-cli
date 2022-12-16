@@ -24,7 +24,7 @@ const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
 type F = <C as GenericConfig<D>>::F;
 
-const DEFAULT_AGGREGATOR_URL: &str = "http://localhost:8080";
+pub const DEFAULT_AGGREGATOR_URL: &str = "http://localhost:8080";
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "intmax")]
@@ -224,10 +224,21 @@ pub fn invoke_command() -> anyhow::Result<()> {
         WalletOnMemory::new(password.to_string())
     };
 
+    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+    let mut file = File::create(wallet_file_path.clone())?;
+    write!(file, "{}", encoded_wallet)?;
+    file.flush()?;
+
     match sub_command {
         SubCommand::Config { config_command } => match config_command {
             ConfigCommand::AggregatorUrl { aggregator_url } => {
                 service.set_aggregator_url(aggregator_url);
+
+                let encoded_service = serde_json::to_string(&service).unwrap();
+                let mut file = File::create(config_file_path.clone())?;
+                write!(file, "{}", encoded_service)?;
+                file.flush()?;
             }
         },
         SubCommand::Account { account_command } => match account_command {
@@ -241,28 +252,19 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .unwrap_or_else(WrappedHashOut::rand);
                 let account = Account::new(*private_key);
                 service.register_account(account.public_key);
-                wallet.add_account(account);
-
-                // NOTICE: account 作成前に token を受け取ることもできるので,
-                // 最初のブロックから同期する必要がある.
-                // let user_state = wallet
-                //     .data
-                //     .get_mut(&account.address)
-                //     .expect("user address was not found in wallet");
-                //
-                // let latest_block = service
-                //     .get_latest_block()
-                //     .expect("fail to fetch latest block");
-                // // dbg!(latest_block.header.block_number);
-                // let last_seen_block_number = latest_block.header.block_number;
-                // user_state.last_seen_block_number = last_seen_block_number;
-
+                wallet.add_account(account).unwrap();
                 println!("new account added: {}", account.address);
 
                 if is_default {
                     wallet.set_default_account(Some(account.address));
                     println!("set above account as default");
                 }
+
+                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                std::fs::create_dir(wallet_dir_path).unwrap_or(());
+                let mut file = File::create(wallet_file_path)?;
+                write!(file, "{}", encoded_wallet)?;
+                file.flush()?;
 
                 service.trigger_propose_block();
                 service.trigger_approve_block();
@@ -298,6 +300,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     } else {
                         println!("set default account: null");
                     }
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path).unwrap_or(());
+                    let mut file = File::create(wallet_file_path)?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
                 }
             }
         },
@@ -375,7 +383,13 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
 
-                service.merge_and_purge_asset(user_state, user_address, &[], false);
+                service.merge_and_purge_asset(user_state, user_address, &[]);
+
+                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                let mut file = File::create(wallet_file_path.clone())?;
+                write!(file, "{}", encoded_wallet)?;
+                file.flush()?;
 
                 service.trigger_propose_block();
                 // service.sign_proposed_block(user_state, user_address);
@@ -390,40 +404,77 @@ pub fn invoke_command() -> anyhow::Result<()> {
             } => {
                 let user_address =
                     parse_address(&wallet, user_address).expect("user address was not given");
-                let user_state = wallet
-                    .data
-                    .get_mut(&user_address)
-                    .expect("user address was not found in wallet");
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
 
-                // let receiver_address = Address::from_str(&receiver_address).unwrap();
-                if user_address == receiver_address {
-                    anyhow::bail!("cannot send asset to myself");
+                    // let receiver_address = Address::from_str(&receiver_address).unwrap();
+                    if user_address == receiver_address {
+                        anyhow::bail!("cannot send asset to myself");
+                    }
+
+                    if amount == 0 || amount >= 1u64 << 56 {
+                        anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                    }
+
+                    // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                    let output_asset = Asset {
+                        kind: TokenKind {
+                            contract_address: contract_address
+                                // .map(|v| Address::from_str(&v).unwrap())
+                                .unwrap_or(user_address),
+                            variable_index,
+                        },
+                        amount,
+                    };
+
+                    service.merge_and_purge_asset(
+                        user_state,
+                        user_address,
+                        &[(receiver_address, output_asset)],
+                    );
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
                 }
 
-                if amount == 0 || amount >= 1u64 << 56 {
-                    anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    service.broadcast_stored_receipts(user_state, user_address);
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
                 }
-
-                // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-                let output_asset = Asset {
-                    kind: TokenKind {
-                        contract_address: contract_address
-                            // .map(|v| Address::from_str(&v).unwrap())
-                            .unwrap_or(user_address),
-                        variable_index,
-                    },
-                    amount,
-                };
-
-                service.merge_and_purge_asset(
-                    user_state,
-                    user_address,
-                    &[(receiver_address, output_asset)],
-                    true,
-                );
 
                 service.trigger_propose_block();
-                service.sign_proposed_block(user_state, user_address);
+
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    service.sign_proposed_block(user_state, user_address);
+
+                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(wallet_file_path.clone())?;
+                    write!(file, "{}", encoded_wallet)?;
+                    file.flush()?;
+                }
+
                 service.trigger_approve_block();
             }
         },
@@ -439,7 +490,14 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .data
                     .get_mut(&user_address)
                     .expect("user address was not found in wallet");
+
                 service.sign_proposed_block(user_state, user_address);
+
+                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
+                std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                let mut file = File::create(wallet_file_path.clone())?;
+                write!(file, "{}", encoded_wallet)?;
+                file.flush()?;
             }
             BlockCommand::Approve {} => {
                 service.trigger_approve_block();
@@ -449,17 +507,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
             }
         },
     }
-
-    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-    std::fs::create_dir(wallet_dir_path).unwrap_or(());
-    let mut file = File::create(wallet_file_path)?;
-    write!(file, "{}", encoded_wallet)?;
-    file.flush()?;
-
-    let encoded_service = serde_json::to_string(&service).unwrap();
-    let mut file = File::create(config_file_path)?;
-    write!(file, "{}", encoded_service)?;
-    file.flush()?;
 
     Ok(())
 }

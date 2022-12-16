@@ -8,9 +8,7 @@ use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
-        block::BlockInfo,
-        circuits::make_block_proof_circuit,
-        gadgets::deposit_block::{DepositInfo, VariableIndex},
+        block::BlockInfo, circuits::make_block_proof_circuit, gadgets::deposit_block::DepositInfo,
     },
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
@@ -22,7 +20,7 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        asset::{Asset, ReceivedAssetProof, TokenKind},
+        asset::{Asset, ReceivedAssetProof},
         block_header::get_block_hash,
         circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
         gadgets::merge::MergeProof,
@@ -33,7 +31,7 @@ use intmax_zkp_core::{
     },
 };
 use plonky2::{
-    field::types::{Field, PrimeField64},
+    field::types::Field,
     hash::{hash_types::HashOut, poseidon::PoseidonHash},
     iop::witness::PartialWitness,
     plonk::{
@@ -505,7 +503,6 @@ impl Config {
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
         purge_diffs: &[(Address<F>, Asset<F>)],
-        broadcast: bool,
     ) {
         let (raw_merge_witnesses, last_seen_block_number) = self
             .get_merge_transaction_witness(
@@ -611,13 +608,12 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let added_merge_witnesses =
+        let mut added_merge_witnesses =
             self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
-        let merge_witnesses = queue_and_dequeue(
-            &mut user_state.rest_merge_witnesses,
-            added_merge_witnesses,
-            N_MERGES,
-        );
+        user_state
+            .rest_merge_witnesses
+            .append(&mut added_merge_witnesses);
+        user_state.last_seen_block_number = last_seen_block_number;
 
         // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&middle_user_asset_root);
@@ -729,36 +725,98 @@ impl Config {
             removed_assets.append(&mut input_assets);
         }
 
+        let dequeued_len = N_TXS.min(user_state.rest_merge_witnesses.len());
+        let merge_witnesses = user_state.rest_merge_witnesses[0..dequeued_len].to_vec();
+
         let nonce = WrappedHashOut::rand();
 
-        let transaction = self.send_assets(
-            user_state.account,
-            &merge_witnesses,
-            &purge_input_witness,
-            &purge_output_witness,
-            nonce,
-            old_user_asset_root,
+        // NOTICE: この間に処理を中断すると, サーバーとの同期が取れなくなり,
+        // そのアカウントは使用できなくなる.
+        {
+            let transaction = self.send_assets(
+                user_state.account,
+                &merge_witnesses,
+                &purge_input_witness,
+                &purge_output_witness,
+                nonce,
+                old_user_asset_root,
+            );
+            // dbg!(transaction.diff_root);
+
+            // send API に含めた merge transaction は削除する.
+            user_state
+                .rest_merge_witnesses
+                .retain(|v| !merge_witnesses.iter().any(|w| v == w));
+
+            if !purge_diffs.is_empty() {
+                // 後で署名するために保管する.
+                user_state
+                    .sent_transactions
+                    .insert(transaction.tx_hash, (removed_assets, None));
+                // 受け取り人にトランアクションの内容を通知するために保管する.
+                user_state.transaction_receipts.push((
+                    transaction.tx_hash,
+                    purge_diffs.to_vec(),
+                    nonce,
+                ));
+            }
+        }
+    }
+
+    pub fn broadcast_stored_receipts<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+        R: RootData<WrappedHashOut<F>>,
+    >(
+        &self,
+        user_state: &mut UserState<D, R>,
+        user_address: Address<F>,
+    ) {
+        let transaction_receipts = user_state.transaction_receipts.clone();
+        for (tx_hash, purge_diffs, nonce) in transaction_receipts {
+            self.broadcast_receipt(user_address, tx_hash, &purge_diffs, nonce);
+
+            // broadcast したデータは削除する
+            user_state
+                .transaction_receipts
+                .retain(|v| v.0 != tx_hash || v.1 != purge_diffs || v.2 != nonce);
+        }
+    }
+
+    pub fn broadcast_receipt(
+        &self,
+        user_address: Address<F>,
+        tx_hash: WrappedHashOut<F>,
+        purge_diffs: &[(Address<F>, Asset<F>)],
+        nonce: WrappedHashOut<F>,
+    ) {
+        let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+            NodeDataMemory::default(),
+            RootDataTmp::default(),
         );
-        // dbg!(transaction.diff_root);
+        for (receiver_address, output_asset) in purge_diffs.iter() {
+            tx_diff_tree
+                .set(
+                    receiver_address.to_hash_out().into(),
+                    output_asset.kind.contract_address.to_hash_out().into(),
+                    output_asset.kind.variable_index.to_hash_out().into(),
+                    HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
+                )
+                .unwrap();
+        }
+
+        let tx_diff_tree: PoseidonSparseMerkleTree<_, _> = tx_diff_tree.into();
 
         // 宛先ごとに渡す asset を整理する
-        let tx_diff_tree: PoseidonSparseMerkleTree<_, _> = tx_diff_tree.into();
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
         let mut assets_map: HashMap<_, (_, Vec<_>)> = HashMap::new();
-        for witness in purge_output_witness.iter() {
-            let receiver_address = witness.0.new_key;
-            let asset = Asset {
-                kind: TokenKind {
-                    contract_address: Address(*witness.1.new_key),
-                    variable_index: VariableIndex::from_hash_out(*witness.2.new_key),
-                },
-                amount: witness.2.new_value.0.elements[0].to_canonical_u64(),
-            };
+        for (receiver_address, output_asset) in purge_diffs.iter() {
             if let Some((_, assets)) = assets_map.get_mut(&receiver_address) {
-                assets.push(asset);
+                assets.push(*output_asset);
             } else {
-                let proof = tx_diff_tree.find(&receiver_address).unwrap();
-                assets_map.insert(receiver_address, (proof, vec![asset]));
+                let proof = tx_diff_tree
+                    .find(&receiver_address.to_hash_out().into())
+                    .unwrap();
+                assets_map.insert(receiver_address, (proof, vec![*output_asset]));
             }
         }
 
@@ -768,23 +826,13 @@ impl Config {
             purge_output_inclusion_witnesses.push(purge_output_inclusion_witness);
             assets_list.push(assets);
         }
-        if broadcast {
-            self.broadcast_transaction(
-                user_address,
-                transaction.tx_hash,
-                nonce,
-                purge_output_inclusion_witnesses,
-                assets_list,
-            );
-        }
-
-        // user_state
-        //     .pending_transactions
-        //     .insert(transaction.tx_hash, removed_assets);
-        user_state
-            .sent_transactions
-            .insert(transaction.tx_hash, (removed_assets, None));
-        user_state.last_seen_block_number = last_seen_block_number;
+        self.broadcast_transaction(
+            user_address,
+            tx_hash,
+            nonce,
+            purge_output_inclusion_witnesses,
+            assets_list,
+        );
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
@@ -811,7 +859,7 @@ impl Config {
 
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
-        let api_path= "/tx/broadcast";
+        let api_path = "/tx/broadcast";
         #[cfg(feature = "verbose")]
         let start = {
             println!("start proving: request {api_path}");
@@ -1255,46 +1303,4 @@ impl Config {
 
         Ok((resp.proofs, latest_block_number))
     }
-}
-
-/// `waiting_elements` の末尾に `queued_elements` を追加し,
-/// その後 `waiting_elements` の先頭から最大 `dequeued_len` 個の要素を取り出す.
-fn queue_and_dequeue<T>(
-    waiting_elements: &mut Vec<T>,
-    queued_elements: Vec<T>,
-    dequeued_len: usize,
-) -> Vec<T> {
-    let mut queued_elements = queued_elements;
-    waiting_elements.append(&mut queued_elements);
-    let dequeued_len = dequeued_len.min(waiting_elements.len());
-    waiting_elements
-        .splice(0..dequeued_len, vec![])
-        .collect::<Vec<_>>()
-}
-
-#[test]
-fn test_queue_and_dequeue1() {
-    let mut waiting_elements = vec![0, 1, 2];
-    let queued_elements = vec![3, 4];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
-    assert_eq!(extracted_elements, vec![0, 1]);
-    assert_eq!(waiting_elements, vec![2, 3, 4]);
-}
-
-#[test]
-fn test_queue_and_dequeue2() {
-    let mut waiting_elements = vec![0, 1, 2];
-    let queued_elements = vec![3, 4];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 6);
-    assert_eq!(extracted_elements, vec![0, 1, 2, 3, 4]);
-    assert_eq!(waiting_elements, vec![] as Vec<i32>);
-}
-
-#[test]
-fn test_queue_and_dequeue3() {
-    let mut waiting_elements = vec![0];
-    let queued_elements = vec![1, 2];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
-    assert_eq!(extracted_elements, vec![0, 1]);
-    assert_eq!(waiting_elements, vec![2]);
 }

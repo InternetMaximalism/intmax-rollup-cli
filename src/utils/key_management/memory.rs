@@ -2,13 +2,15 @@ use std::collections::HashMap;
 
 use intmax_zkp_core::{
     sparse_merkle_tree::{
-        goldilocks_poseidon::{GoldilocksHashOut, NodeDataMemory, RootDataMemory, WrappedHashOut},
+        goldilocks_poseidon::{NodeDataMemory, RootDataMemory, WrappedHashOut},
         node_data::{Node, NodeData},
         root_data::RootData,
     },
     transaction::{
-        asset::TokenKind, circuits::MergeAndPurgeTransitionPublicInputs,
-        gadgets::merge::MergeProof, tree::user_asset::UserAssetTree,
+        asset::{Asset, TokenKind},
+        circuits::MergeAndPurgeTransitionPublicInputs,
+        gadgets::merge::MergeProof,
+        tree::user_asset::UserAssetTree,
     },
     zkdsa::account::{Account, Address},
 };
@@ -21,8 +23,8 @@ type F = GoldilocksField;
 
 #[derive(Clone, Debug)]
 pub struct UserState<
-    D: NodeData<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut>,
-    R: RootData<GoldilocksHashOut>,
+    D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+    R: RootData<WrappedHashOut<F>>,
 > {
     pub account: Account<F>,
     pub asset_tree: UserAssetTree<D, R>,
@@ -36,17 +38,21 @@ pub struct UserState<
     #[allow(clippy::type_complexity)]
     pub pending_transactions:
         HashMap<WrappedHashOut<F>, Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>>,
-    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+
+    pub rest_merge_witnesses: Vec<MergeProof<F>>,
 
     /// the set consisting of `(tx_hash, removed_assets, block_number)`.
     #[allow(clippy::type_complexity)]
     pub sent_transactions:
         HashMap<WrappedHashOut<F>, (Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>, Option<u32>)>,
-    // HashSet<(
-    //     WrappedHashOut<F>,
-    //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
-    //     Option<u32>,
-    // )>,
+
+    /// the vector consisting of `(tx_hash, purge_diffs, nonce)`
+    #[allow(clippy::type_complexity)]
+    pub transaction_receipts: Vec<(
+        WrappedHashOut<F>,
+        Vec<(Address<F>, Asset<F>)>,
+        WrappedHashOut<F>,
+    )>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -69,12 +75,19 @@ pub struct SerializableUserState {
     //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
     // )>,
     #[serde(default)]
-    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+    pub rest_merge_witnesses: Vec<MergeProof<F>>,
 
     #[serde(default)]
     pub sent_transactions: Vec<(
         WrappedHashOut<F>,
         (Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>, Option<u32>),
+    )>,
+
+    #[serde(default)]
+    pub transaction_receipts: Vec<(
+        WrappedHashOut<F>,
+        Vec<(Address<F>, Asset<F>)>,
+        WrappedHashOut<F>,
     )>,
 }
 
@@ -104,6 +117,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             pending_transactions,
             rest_merge_witnesses: value.rest_merge_witnesses,
             sent_transactions,
+            transaction_receipts: value.transaction_receipts,
         }
     }
 }
@@ -139,6 +153,7 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             last_seen_block_number: value.last_seen_block_number,
             rest_merge_witnesses: value.rest_merge_witnesses,
             sent_transactions,
+            transaction_receipts: value.transaction_receipts,
         }
     }
 }
@@ -204,6 +219,7 @@ impl Serialize for WalletOnMemory {
 }
 
 impl Wallet for WalletOnMemory {
+    type Error = anyhow::Error;
     type Seed = String;
     type Account = Account<F>;
 
@@ -214,9 +230,14 @@ impl Wallet for WalletOnMemory {
         }
     }
 
-    fn add_account(&mut self, account: Account<F>) {
+    fn add_account(&mut self, account: Account<F>) -> anyhow::Result<()> {
         let asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataMemory::default());
-        let old_account = self.data.insert(
+        let old_account = self.data.get(&account.address);
+        if old_account.is_none() {
+            anyhow::bail!("designated address was already used");
+        }
+
+        self.data.insert(
             account.address,
             UserState {
                 account,
@@ -227,9 +248,11 @@ impl Wallet for WalletOnMemory {
                 last_seen_block_number: 0,
                 rest_merge_witnesses: Default::default(),
                 sent_transactions: Default::default(),
+                transaction_receipts: Default::default(),
             },
         );
-        assert!(old_account.is_none(), "designated address was already used");
+
+        Ok(())
     }
 
     fn set_default_account(&mut self, address: Option<Address<F>>) {

@@ -85,6 +85,8 @@ impl<F: RichField> Assets<F> {
 }
 
 pub trait Wallet {
+    type Error;
+
     /// the type of passwords for accessing this wallet
     type Seed;
 
@@ -97,7 +99,7 @@ pub trait Wallet {
 
     /// Store a account in a wallet.
     /// Panic if the address of the account was already used.
-    fn add_account(&mut self, account: Self::Account);
+    fn add_account(&mut self, account: Self::Account) -> Result<(), Self::Error>;
 
     // fn remove_account(&mut self, address: Address<GoldilocksField>);
 
