@@ -411,15 +411,15 @@ impl Config {
                 .unwrap_or_else(|err| {
                     dbg!(err);
 
-                    (vec![], user_state.last_seen_block_number)
-                });
-            let (blocks, _) = self
-                .get_blocks(
-                    Some(user_state.last_seen_block_number),
-                    Some(last_seen_block_number),
-                )
-                .unwrap_or_else(|err| {
-                    dbg!(err);
+                (vec![], user_state.last_seen_block_number)
+            });
+        let (blocks, _) = self
+            .get_blocks(
+                Some(user_state.last_seen_block_number),
+                Some(last_seen_block_number),
+            )
+            .unwrap_or_else(|err| {
+                dbg!(err);
 
                     (vec![], last_seen_block_number)
                 });
@@ -501,13 +501,13 @@ impl Config {
                         true
                     }
                 });
-            }
-
-            user_state
-                .rest_merge_witnesses
-                .append(&mut raw_merge_witnesses);
-            user_state.last_seen_block_number = last_seen_block_number;
         }
+
+        user_state
+            .rest_received_assets
+            .append(&mut raw_merge_witnesses);
+        user_state.last_seen_block_number = last_seen_block_number;
+    }
 
     pub fn merge_and_purge_asset<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
@@ -521,8 +521,8 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let dequeued_len = N_TXS.min(user_state.rest_merge_witnesses.len());
-        let raw_merge_witnesses = user_state.rest_merge_witnesses[0..dequeued_len].to_vec();
+        let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
+        let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
         let (merge_witnesses, middle_user_asset_root) =
             calc_merge_witnesses(user_state, &raw_merge_witnesses);
         // dbg!(&middle_user_asset_root);
@@ -588,7 +588,7 @@ impl Config {
 
             // send API に含めた merge transaction は削除する.
             user_state
-                .rest_merge_witnesses
+                .rest_received_assets
                 .retain(|v| !raw_merge_witnesses.iter().any(|w| v == w));
         }
         println!("Complete to send your transaction.");

@@ -9,7 +9,7 @@ use intmax_zkp_core::{
     transaction::{
         asset::{Asset, TokenKind, ReceivedAssetProof},
         circuits::MergeAndPurgeTransitionPublicInputs,
-        tree::user_asset::UserAssetTree,
+        tree::user_asset::UserAssetTree, gadgets::merge::MergeProof,
     },
     zkdsa::account::{Account, Address},
 };
@@ -38,7 +38,10 @@ pub struct UserState<
     pub pending_transactions:
         HashMap<WrappedHashOut<F>, Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>>,
 
-    pub rest_merge_witnesses: Vec<ReceivedAssetProof<F>>,
+        /// deprecated
+    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+
+    pub rest_received_assets: Vec<ReceivedAssetProof<F>>,
 
     /// the set consisting of `(tx_hash, removed_assets, block_number)`.
     #[allow(clippy::type_complexity)]
@@ -74,7 +77,10 @@ pub struct SerializableUserState {
     //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
     // )>,
     #[serde(default)]
-    pub rest_merge_witnesses: Vec<ReceivedAssetProof<F>>,
+    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+
+    #[serde(default)]
+    pub rest_received_assets: Vec<ReceivedAssetProof<F>>,
 
     #[serde(default)]
     pub sent_transactions: Vec<(
@@ -115,6 +121,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             transactions,
             pending_transactions,
             rest_merge_witnesses: value.rest_merge_witnesses,
+            rest_received_assets: value.rest_received_assets,
             sent_transactions,
             transaction_receipts: value.transaction_receipts,
         }
@@ -151,6 +158,7 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             // pending_transactions,
             last_seen_block_number: value.last_seen_block_number,
             rest_merge_witnesses: value.rest_merge_witnesses,
+            rest_received_assets: value.rest_received_assets,
             sent_transactions,
             transaction_receipts: value.transaction_receipts,
         }
@@ -245,6 +253,7 @@ impl Wallet for WalletOnMemory {
                 transactions: Default::default(),
                 pending_transactions: Default::default(),
                 last_seen_block_number: 0,
+                rest_received_assets: Default::default(),
                 rest_merge_witnesses: Default::default(),
                 sent_transactions: Default::default(),
                 transaction_receipts: Default::default(),
