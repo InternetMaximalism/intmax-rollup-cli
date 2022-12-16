@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -8,7 +8,9 @@ use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
-        block::BlockInfo, circuits::make_block_proof_circuit, gadgets::deposit_block::DepositInfo,
+        block::BlockInfo,
+        circuits::make_block_proof_circuit,
+        gadgets::deposit_block::{DepositInfo, VariableIndex},
     },
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
@@ -17,7 +19,7 @@ use intmax_zkp_core::{
             RootDataTmp, WrappedHashOut,
         },
         node_data::NodeData,
-        root_data::RootData,
+        root_data::RootData, proof::ProcessMerkleProofRole,
     },
     transaction::{
         asset::{Asset, ReceivedAssetProof, TokenKind},
@@ -32,7 +34,7 @@ use intmax_zkp_core::{
     },
 };
 use plonky2::{
-    field::types::Field,
+    field::types::{Field, PrimeField64},
     hash::{hash_types::HashOut, poseidon::PoseidonHash},
     iop::witness::PartialWitness,
     plonk::{
@@ -42,7 +44,7 @@ use plonky2::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::key_management::memory::UserState;
+use crate::utils::key_management::{memory::UserState, types::Assets};
 
 const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
@@ -529,7 +531,7 @@ impl Config {
 
         let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
         let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
-        let (merge_witnesses, middle_user_asset_root) =
+        let (merge_witnesses, merging_assets, middle_user_asset_root) =
             calc_merge_witnesses(user_state, &raw_merge_witnesses);
         // dbg!(&middle_user_asset_root);
 
@@ -537,6 +539,7 @@ impl Config {
             calc_purge_witnesses(
                 user_state,
                 user_address,
+                merging_assets,
                 purge_diffs,
                 middle_user_asset_root,
             );
@@ -577,7 +580,21 @@ impl Config {
                 // 受信者にトランザクションの内容を通知するために保管する.
                 user_state.transaction_receipts.push((
                     transaction.tx_hash,
-                    purge_diffs.to_vec(),
+                    purge_output_witness
+                        .into_iter()
+                        .map(|v| {
+                            (
+                                Address(v.0.new_key.0),
+                                Asset {
+                                    kind: TokenKind {
+                                        contract_address: Address(v.1.new_key.0),
+                                        variable_index: VariableIndex::from_hash_out(*v.2.new_key),
+                                    },
+                                    amount: v.2.new_value.elements[0].to_canonical_u64(),
+                                },
+                            )
+                        })
+                        .collect::<Vec<_>>(),
                     nonce,
                 ));
             }
@@ -623,14 +640,14 @@ impl Config {
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
-        purge_diffs: &[(Address<F>, Asset<F>)],
+        purge_output_assets: &[(Address<F>, Asset<F>)],
         nonce: WrappedHashOut<F>,
     ) {
         let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             NodeDataMemory::default(),
             RootDataTmp::default(),
         );
-        for (receiver_address, output_asset) in purge_diffs.iter() {
+        for (receiver_address, output_asset) in purge_output_assets.iter() {
             tx_diff_tree
                 .set(
                     receiver_address.to_hash_out().into(),
@@ -646,7 +663,7 @@ impl Config {
         // 宛先ごとに渡す asset を整理する
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
         let mut assets_map: HashMap<_, (_, Vec<_>)> = HashMap::new();
-        for (receiver_address, output_asset) in purge_diffs.iter() {
+        for (receiver_address, output_asset) in purge_output_assets.iter() {
             if let Some((_, assets)) = assets_map.get_mut(&receiver_address) {
                 assets.push(*output_asset);
             } else {
@@ -1142,7 +1159,7 @@ impl Config {
     }
 }
 
-/// Returns `(merge_witnesses, middle_user_asset_root)`
+/// Returns `(merge_witnesses, merging_assets, middle_user_asset_root)`
 pub fn calc_merge_witnesses<
     D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
     R: RootData<WrappedHashOut<F>> + Clone,
@@ -1150,12 +1167,13 @@ pub fn calc_merge_witnesses<
     // &self,
     user_state: &mut UserState<D, R>,
     received_asset_witnesses: &[ReceivedAssetProof<F>],
-) -> (Vec<MergeProof<F>>, WrappedHashOut<F>) {
+) -> (Vec<MergeProof<F>>, Assets<F>, WrappedHashOut<F>) {
     // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
     let mut asset_tree = UserAssetTree::new(
         user_state.asset_tree.nodes_db.clone(),
         RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
     );
+    let mut merging_assets = Assets(HashSet::new());
 
     let mut merge_witnesses = vec![];
     for received_asset_witness in received_asset_witnesses.iter().cloned() {
@@ -1195,7 +1213,8 @@ pub fn calc_merge_witnesses<
             }
         }
 
-        for asset in witness.assets {
+        for asset in witness.assets.iter() {
+            merging_assets.add(asset.kind, asset.amount, merge_key);
             asset_tree
                 .set(
                     merge_key,
@@ -1245,7 +1264,7 @@ pub fn calc_merge_witnesses<
 
     let middle_user_asset_root = asset_tree.get_root().unwrap();
 
-    (merge_witnesses, middle_user_asset_root)
+    (merge_witnesses, merging_assets, middle_user_asset_root)
 }
 
 /// Returns `(purge_input_witness, purge_output_witness, removed_assets, new_user_asset_root)`
@@ -1256,6 +1275,7 @@ fn calc_purge_witnesses<
 >(
     user_state: &mut UserState<D, R>,
     user_address: Address<F>,
+    merging_assets: Assets<F>,
     purge_diffs: &[(Address<F>, Asset<F>)],
     middle_user_asset_root: WrappedHashOut<F>,
 ) -> (
@@ -1298,15 +1318,14 @@ fn calc_purge_witnesses<
         output_asset_map.insert(output_asset.kind, old_amount + output_asset.amount);
     }
 
+    let mut assets = user_state.assets.clone();
+    for asset in merging_assets.0 {
+        assets.add(asset.0, asset.1, asset.2);
+    }
     let mut purge_input_witness = vec![];
     let mut removed_assets = vec![];
     for (kind, output_amount) in output_asset_map {
-        let mut target_assets = user_state
-            .assets
-            .filter(kind)
-            .0
-            .into_iter()
-            .collect::<Vec<_>>();
+        let mut target_assets = assets.filter(kind).0.into_iter().collect::<Vec<_>>();
 
         // 大きい amount をもつ leaf から処理する.
         target_assets.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().reverse());
@@ -1346,15 +1365,6 @@ fn calc_purge_witnesses<
 
         // input に含めた asset を取り除く
         for input_asset in input_assets.iter() {
-            let rest_amount = asset_tree
-                .find(
-                    &input_asset.2, // merge_key
-                    &input_asset.0.contract_address.to_hash_out().into(),
-                    &input_asset.0.variable_index.to_hash_out().into(),
-                )
-                .unwrap();
-            // dbg!(&rest_amount);
-            assert_ne!(rest_amount.2.value, WrappedHashOut::ZERO);
             let input_witness = asset_tree
                 .set(
                     input_asset.2, // merge_key
@@ -1363,6 +1373,7 @@ fn calc_purge_witnesses<
                     HashOut::ZERO.into(),
                 )
                 .unwrap();
+            assert_eq!(input_witness.2.fnc, ProcessMerkleProofRole::ProcessDelete);
             purge_input_witness.push(input_witness);
         }
 

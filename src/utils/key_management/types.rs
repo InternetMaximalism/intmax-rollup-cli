@@ -52,9 +52,9 @@ impl Serialize for Assets<GoldilocksField> {
 
 impl<F: RichField> Assets<F> {
     // TODO: tx_hash ではなく merge_key
-    pub fn add(&mut self, kind: TokenKind<F>, amount: u64, tx_hash: WrappedHashOut<F>) {
-        // NOTICE: どの kind と tx_hash の組み合わせに対しても要素は高々一つ
-        self.0.insert((kind, amount, tx_hash));
+    pub fn add(&mut self, kind: TokenKind<F>, amount: u64, merge_key: WrappedHashOut<F>) {
+        // NOTICE: どの kind と merge_key の組み合わせに対しても要素は高々一つ
+        self.0.insert((kind, amount, merge_key));
     }
 
     pub fn filter(&self, kind: TokenKind<F>) -> Self {
