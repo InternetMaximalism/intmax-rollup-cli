@@ -8,9 +8,7 @@ use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
-        block::BlockInfo,
-        circuits::make_block_proof_circuit,
-        gadgets::deposit_block::{DepositInfo, VariableIndex},
+        block::BlockInfo, circuits::make_block_proof_circuit, gadgets::deposit_block::VariableIndex,
     },
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
@@ -22,7 +20,7 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        asset::{Asset, ReceivedAssetProof, TokenKind},
+        asset::{Asset, ContributedAsset, ReceivedAssetProof, TokenKind},
         block_header::get_block_hash,
         circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
         gadgets::merge::MergeProof,
@@ -44,6 +42,9 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::utils::key_management::memory::UserState;
+
+mod airdrop;
+pub use airdrop::read_distribution_from_csv;
 
 const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
@@ -167,8 +168,26 @@ impl Config {
     }
 
     /// test function
-    pub fn deposit_assets(&self, deposit_info: Vec<DepositInfo<F>>) {
-        let payload = RequestDepositAddBody { deposit_info };
+    pub fn deposit_assets(
+        &self,
+        user_address: Address<F>,
+        deposit_list: Vec<ContributedAsset<F>>,
+    ) -> anyhow::Result<()> {
+        for asset in deposit_list.iter() {
+            if asset.kind.contract_address != user_address {
+                anyhow::bail!("contract address must be your user address");
+            }
+            if asset.amount == 0 || asset.amount >= 1u64 << 56 {
+                anyhow::bail!("`amount` must be a positive integer less than 2^56");
+            }
+        }
+
+        let payload = RequestDepositAddBody {
+            deposit_info: deposit_list
+                .into_iter()
+                .map(|v| v.into())
+                .collect::<Vec<_>>(),
+        };
         let body = serde_json::to_string(&payload).expect("fail to encode");
         let api_path = "/test/deposit/add";
         #[cfg(feature = "verbose")]
@@ -200,6 +219,8 @@ impl Config {
         } else {
             panic!("fail to deposit");
         }
+
+        Ok(())
     }
 
     pub fn send_assets(
@@ -517,14 +538,9 @@ impl Config {
         &self,
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
-        purge_diffs: &[(Address<F>, Asset<F>)],
+        purge_diffs: &[ContributedAsset<F>],
         broadcast: bool,
     ) -> anyhow::Result<()> {
-        // 必要な output_assets が多すぎる場合, 送信は失敗する.
-        if purge_diffs.len() >= N_DIFFS / 2 {
-            anyhow::bail!("too many destinations and token kinds");
-        }
-
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
@@ -544,11 +560,11 @@ impl Config {
         let mut purge_input_witness = vec![];
         let mut purge_output_witness = vec![];
         let mut output_asset_map = HashMap::new();
-        for (receiver_address, output_asset) in purge_diffs {
+        for output_asset in purge_diffs {
             // dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
-                    receiver_address.to_hash_out().into(),
+                    output_asset.receiver_address.to_hash_out().into(),
                     output_asset.kind.contract_address.to_hash_out().into(),
                     output_asset.kind.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[F::from_canonical_u64(output_asset.amount)]).into(),
@@ -575,16 +591,17 @@ impl Config {
                 .collect::<Vec<_>>();
 
             // 大きい amount をもつ leaf から処理する.
-            target_assets.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().reverse());
+            // ただし, output_amount と同じ値をもつ leaf があればそれを優先する.
+            target_assets.sort_by(|a, b| {
+                (a.1 == output_amount, a.1)
+                    .partial_cmp(&(b.1 == output_amount, b.1))
+                    .unwrap()
+                    .reverse()
+            });
 
             let mut input_assets = vec![];
             let mut input_amount = 0;
             for asset in target_assets {
-                // 必要な input_assets が多すぎる場合, 送信は失敗する.
-                if purge_input_witness.len() >= N_DIFFS {
-                    anyhow::bail!("too many fragments of assets");
-                }
-
                 input_amount += asset.1;
                 input_assets.push(asset);
 
@@ -645,6 +662,16 @@ impl Config {
                 .retain(|asset| input_assets.iter().all(|t| asset != t));
 
             removed_assets.append(&mut input_assets);
+        }
+
+        // 必要な input_assets が多すぎる場合, 送信は失敗する.
+        if purge_input_witness.len() > N_DIFFS {
+            anyhow::bail!("too many fragments of assets");
+        }
+
+        // 必要な output_assets が多すぎる場合, 送信は失敗する.
+        if purge_output_witness.len() > N_DIFFS {
+            anyhow::bail!("too many destinations and token kinds");
         }
 
         let nonce = WrappedHashOut::rand();
