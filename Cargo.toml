@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+ctrlc = "3.2"
 dirs = "4.0"
 hex = "0.4"
 intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "493f60268ec762e65f3c19965d79236a7273e1d5" }
