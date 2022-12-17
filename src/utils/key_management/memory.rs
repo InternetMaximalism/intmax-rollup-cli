@@ -7,8 +7,8 @@ use intmax_zkp_core::{
         root_data::RootData,
     },
     transaction::{
-        asset::TokenKind, circuits::MergeAndPurgeTransitionPublicInputs,
-        gadgets::merge::MergeProof, tree::user_asset::UserAssetTree,
+        asset::{ReceivedAssetProof, TokenKind},
+        tree::user_asset::UserAssetTree,
     },
     zkdsa::account::{Account, Address},
 };
@@ -29,14 +29,7 @@ pub struct UserState<
     pub assets: Assets<F>,
     pub last_seen_block_number: u32,
 
-    /// deprecated
-    pub transactions: HashMap<WrappedHashOut<F>, MergeAndPurgeTransitionPublicInputs<F>>,
-
-    /// key: tx_hash, value: removed_assets = (kind, amount, merge_key)
-    #[allow(clippy::type_complexity)]
-    pub pending_transactions:
-        HashMap<WrappedHashOut<F>, Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>>,
-    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+    pub rest_received_assets: Vec<ReceivedAssetProof<GoldilocksField>>,
 
     /// the set consisting of `(tx_hash, removed_assets, block_number)`.
     #[allow(clippy::type_complexity)]
@@ -62,14 +55,8 @@ pub struct SerializableUserState {
     #[serde(default)]
     pub last_seen_block_number: u32,
 
-    // /// the vector consisting of `(tx_hash, removed_assets)`
-    // #[serde(default)]
-    // pub pending_transactions: Vec<(
-    //     WrappedHashOut<F>,
-    //     Vec<(TokenKind<F>, u64, WrappedHashOut<F>)>,
-    // )>,
     #[serde(default)]
-    pub rest_merge_witnesses: Vec<MergeProof<GoldilocksField>>,
+    pub rest_received_assets: Vec<ReceivedAssetProof<GoldilocksField>>,
 
     #[serde(default)]
     pub sent_transactions: Vec<(
@@ -85,11 +72,6 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             .multi_insert(value.asset_tree_nodes)
             .unwrap();
         let asset_tree = UserAssetTree::new(asset_tree_nodes, value.asset_tree_root.into());
-        let transactions = HashMap::new();
-        let pending_transactions = HashMap::new();
-        // for tx in value.pending_transactions {
-        //     pending_transactions.insert(tx.0, tx.1);
-        // }
         let mut sent_transactions = HashMap::new();
         for (key, value) in value.sent_transactions {
             sent_transactions.insert(key, value);
@@ -100,9 +82,7 @@ impl From<SerializableUserState> for UserState<NodeDataMemory, RootDataMemory> {
             asset_tree,
             assets: value.assets,
             last_seen_block_number: value.last_seen_block_number,
-            transactions,
-            pending_transactions,
-            rest_merge_witnesses: value.rest_merge_witnesses,
+            rest_received_assets: value.rest_received_assets,
             sent_transactions,
         }
     }
@@ -127,7 +107,6 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             .clone()
             .into_iter()
             .collect::<Vec<_>>();
-        // let pending_transactions = value.pending_transactions.into_iter().collect::<Vec<_>>();
         let sent_transactions = value.sent_transactions.into_iter().collect::<Vec<_>>();
 
         Self {
@@ -135,9 +114,8 @@ impl From<UserState<NodeDataMemory, RootDataMemory>> for SerializableUserState {
             asset_tree_nodes,
             asset_tree_root,
             assets: value.assets,
-            // pending_transactions,
             last_seen_block_number: value.last_seen_block_number,
-            rest_merge_witnesses: value.rest_merge_witnesses,
+            rest_received_assets: value.rest_received_assets,
             sent_transactions,
         }
     }
@@ -222,10 +200,8 @@ impl Wallet for WalletOnMemory {
                 account,
                 asset_tree,
                 assets: Default::default(),
-                transactions: Default::default(),
-                pending_transactions: Default::default(),
                 last_seen_block_number: 0,
-                rest_merge_witnesses: Default::default(),
+                rest_received_assets: Default::default(),
                 sent_transactions: Default::default(),
             },
         );

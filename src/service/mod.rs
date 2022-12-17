@@ -384,7 +384,7 @@ impl Config {
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
-        &self,
+        &self, // unused
         received_asset_witness: Vec<ReceivedAssetProof<F>>,
         _user_address: Address<F>,
         user_state: &mut UserState<D, R>,
@@ -497,17 +497,15 @@ impl Config {
         Ok(resp)
     }
 
-    pub fn merge_and_purge_asset<
+    pub fn sync_sent_transaction<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
         &self,
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
-        purge_diffs: &[(Address<F>, Asset<F>)],
-        broadcast: bool,
     ) {
-        let (raw_merge_witnesses, last_seen_block_number) = self
+        let (mut raw_merge_witnesses, last_seen_block_number) = self
             .get_merge_transaction_witness(
                 user_address,
                 Some(user_state.last_seen_block_number),
@@ -608,16 +606,29 @@ impl Config {
             });
         }
 
+        user_state
+            .rest_received_assets
+            .append(&mut raw_merge_witnesses);
+        user_state.last_seen_block_number = last_seen_block_number;
+    }
+
+    pub fn merge_and_purge_asset<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+        R: RootData<WrappedHashOut<F>> + Clone,
+    >(
+        &self,
+        user_state: &mut UserState<D, R>,
+        user_address: Address<F>,
+        purge_diffs: &[(Address<F>, Asset<F>)],
+        broadcast: bool,
+    ) {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let added_merge_witnesses =
-            self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
-        let merge_witnesses = queue_and_dequeue(
-            &mut user_state.rest_merge_witnesses,
-            added_merge_witnesses,
-            N_MERGES,
-        );
+        let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
+        let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
+        let merge_witnesses =
+            self.merge_received_asset(raw_merge_witnesses.clone(), user_address, user_state);
 
         // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&middle_user_asset_root);
@@ -741,6 +752,11 @@ impl Config {
         );
         // dbg!(transaction.diff_root);
 
+        // send API に含めた merge transaction は削除する.
+        user_state
+            .rest_received_assets
+            .retain(|v| !raw_merge_witnesses.iter().any(|w| v == w));
+
         // 宛先ごとに渡す asset を整理する
         let tx_diff_tree: PoseidonSparseMerkleTree<_, _> = tx_diff_tree.into();
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
@@ -778,13 +794,9 @@ impl Config {
             );
         }
 
-        // user_state
-        //     .pending_transactions
-        //     .insert(transaction.tx_hash, removed_assets);
         user_state
             .sent_transactions
             .insert(transaction.tx_hash, (removed_assets, None));
-        user_state.last_seen_block_number = last_seen_block_number;
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
@@ -811,7 +823,7 @@ impl Config {
 
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
-        let api_path= "/tx/broadcast";
+        let api_path = "/tx/broadcast";
         #[cfg(feature = "verbose")]
         let start = {
             println!("start proving: request {api_path}");
@@ -1255,46 +1267,4 @@ impl Config {
 
         Ok((resp.proofs, latest_block_number))
     }
-}
-
-/// `waiting_elements` の末尾に `queued_elements` を追加し,
-/// その後 `waiting_elements` の先頭から最大 `dequeued_len` 個の要素を取り出す.
-fn queue_and_dequeue<T>(
-    waiting_elements: &mut Vec<T>,
-    queued_elements: Vec<T>,
-    dequeued_len: usize,
-) -> Vec<T> {
-    let mut queued_elements = queued_elements;
-    waiting_elements.append(&mut queued_elements);
-    let dequeued_len = dequeued_len.min(waiting_elements.len());
-    waiting_elements
-        .splice(0..dequeued_len, vec![])
-        .collect::<Vec<_>>()
-}
-
-#[test]
-fn test_queue_and_dequeue1() {
-    let mut waiting_elements = vec![0, 1, 2];
-    let queued_elements = vec![3, 4];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
-    assert_eq!(extracted_elements, vec![0, 1]);
-    assert_eq!(waiting_elements, vec![2, 3, 4]);
-}
-
-#[test]
-fn test_queue_and_dequeue2() {
-    let mut waiting_elements = vec![0, 1, 2];
-    let queued_elements = vec![3, 4];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 6);
-    assert_eq!(extracted_elements, vec![0, 1, 2, 3, 4]);
-    assert_eq!(waiting_elements, vec![] as Vec<i32>);
-}
-
-#[test]
-fn test_queue_and_dequeue3() {
-    let mut waiting_elements = vec![0];
-    let queued_elements = vec![1, 2];
-    let extracted_elements = queue_and_dequeue(&mut waiting_elements, queued_elements, 2);
-    assert_eq!(extracted_elements, vec![0, 1]);
-    assert_eq!(waiting_elements, vec![2]);
 }
