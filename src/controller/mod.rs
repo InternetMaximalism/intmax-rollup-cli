@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
-    fs::{create_dir, File},
+    fs::{create_dir, File, OpenOptions},
     io::{Read, Write},
     path::PathBuf,
 };
 
-use intmax_rollup_interface::constants::{N_DIFFS, N_MERGES};
+use intmax_rollup_interface::constants::*;
 use intmax_zkp_core::{
     rollup::gadgets::deposit_block::VariableIndex,
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
@@ -122,6 +122,14 @@ enum AccountCommand {
     /// Set default account
     #[structopt(name = "set-default")]
     SetDefault { user_address: Option<Address<F>> },
+    Export {
+        #[structopt(long)]
+        user_address: Option<Address<F>>,
+
+        /// export file path
+        #[structopt(long = "file", short = "f")]
+        file_path: PathBuf,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -333,6 +341,25 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                     backup_wallet(&wallet)?;
                 }
+            }
+            AccountCommand::Export {
+                user_address,
+                file_path,
+            } => {
+                let user_address =
+                    parse_address(&wallet, user_address).expect("user address was not given");
+                let user_state = wallet
+                    .data
+                    .get(&user_address)
+                    .expect("user address was not found in wallet");
+
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(file_path)
+                    .map_err(|_| anyhow::anyhow!("file was not found"))?;
+                let account = user_state.account;
+                write!(file, "{}", serde_json::to_string(&account)?)?;
             }
         },
         SubCommand::Deposit {
