@@ -69,7 +69,16 @@ mod tests {
         ];
 
         // deposit のみの block を作成.
-        service.deposit_assets(deposit_list.clone());
+        service
+            .deposit_assets(
+                sender1_account.address,
+                deposit_list
+                    .iter()
+                    .cloned()
+                    .map(|v| v.into())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
         service.trigger_propose_block();
         let deposit_block = service.trigger_approve_block();
 

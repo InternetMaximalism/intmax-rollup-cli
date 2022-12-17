@@ -1,18 +1,18 @@
 use std::{
+    collections::HashMap,
     fs::{create_dir, File},
     io::{Read, Write},
+    path::PathBuf,
 };
 
+use intmax_rollup_interface::constants::{N_DIFFS, N_MERGES};
 use intmax_zkp_core::{
-    rollup::gadgets::deposit_block::{DepositInfo, VariableIndex},
+    rollup::gadgets::deposit_block::VariableIndex,
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
-    transaction::asset::{Asset, TokenKind},
+    transaction::asset::{ContributedAsset, TokenKind},
     zkdsa::account::{Account, Address},
 };
-use plonky2::{
-    field::types::Field,
-    plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-};
+use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 use structopt::StructOpt;
 
 use crate::{
@@ -35,19 +35,19 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum SubCommand {
-    /// Config
+    /// Config commands
     #[structopt(name = "config")]
     Config {
         #[structopt(subcommand)]
         config_command: ConfigCommand,
     },
-    /// Account
+    /// Account commands
     #[structopt(name = "account")]
     Account {
         #[structopt(subcommand)]
         account_command: AccountCommand,
     },
-    /// Deposit
+    /// Mint your token.
     #[structopt(name = "deposit")]
     Deposit {
         #[structopt(long)]
@@ -61,21 +61,34 @@ enum SubCommand {
         #[structopt(long)]
         amount: u64,
     },
-    /// Assets
+    /// Display your assets.
     #[structopt(name = "assets")]
     Assets {
         #[structopt(long)]
         user_address: Option<Address<F>>,
-        // #[structopt(long)]
-        // verbose: bool,
     },
-    /// Transaction
+    /// New tokens are issued and distributed according to the contents of the file.
+    /// Up to 16 tokens can be sent.
+    ///
+    /// template file: https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv
+    #[structopt(name = "airdrop")]
+    AirDrop {
+        #[structopt(long)]
+        user_address: Option<Address<F>>,
+
+        /// CSV file path
+        #[structopt(long = "file", short = "f")]
+        csv_path: PathBuf,
+        // #[structopt(long)]
+        // json: Vec<ContributedAsset<F>>,
+    },
+    /// Transaction commands
     #[structopt(name = "tx")]
     Transaction {
         #[structopt(subcommand)]
         tx_command: TransactionCommand,
     },
-    /// Block
+    /// Block commands
     #[structopt(name = "block")]
     Block {
         #[structopt(subcommand)]
@@ -337,20 +350,122 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // receiver_address と同じ contract_address をもつトークンしか mint できない
             let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
 
-            if amount == 0 || amount >= 1u64 << 56 {
-                anyhow::bail!("`amount` must be a positive integer less than 2^56");
-            }
-
             // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-            let deposit_info = DepositInfo {
+            let deposit_info = ContributedAsset {
                 receiver_address: user_address,
-                contract_address,
-                variable_index,
-                amount: F::from_canonical_u64(amount),
+                kind: TokenKind {
+                    contract_address,
+                    variable_index,
+                },
+                amount,
             };
-            service.deposit_assets(vec![deposit_info]);
+            service.deposit_assets(user_address, vec![deposit_info])?;
 
             service.trigger_propose_block();
+            service.trigger_approve_block();
+        }
+        SubCommand::AirDrop {
+            user_address,
+            csv_path,
+            // json
+        } => {
+            let user_address =
+                parse_address(&wallet, user_address).expect("user address was not given");
+            {
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                service.sync_sent_transaction(user_state, user_address);
+
+                backup_wallet(&wallet)?;
+            }
+
+            let file = File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
+            let json = read_distribution_from_csv(user_address, file)?;
+            let mut distribution_map: HashMap<(Address<F>, TokenKind<F>), u64> = HashMap::new();
+            for asset in json.iter() {
+                if let Some(v) = distribution_map.get_mut(&(asset.receiver_address, asset.kind)) {
+                    *v += asset.amount;
+                } else {
+                    distribution_map.insert((asset.receiver_address, asset.kind), asset.amount);
+                }
+            }
+
+            let distribution_list = distribution_map
+                .iter()
+                .map(|(k, v)| ContributedAsset {
+                    receiver_address: k.0,
+                    kind: k.1,
+                    amount: *v,
+                })
+                .collect::<Vec<_>>();
+
+            if distribution_list.is_empty() {
+                anyhow::bail!("asset list is empty");
+            }
+
+            if distribution_list.len() > N_DIFFS.min(N_MERGES) {
+                anyhow::bail!("too many destinations and token kinds");
+            }
+
+            {
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                if !user_state.rest_received_assets.is_empty() {
+                    anyhow::bail!("receive all assets sent to you in advance");
+                }
+
+                let mut deposit_list = distribution_list.clone();
+                deposit_list
+                    .iter_mut()
+                    .for_each(|v| v.receiver_address = user_address);
+
+                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                service.deposit_assets(user_address, deposit_list)?;
+
+                service.trigger_propose_block();
+                service.trigger_approve_block();
+
+                service.sync_sent_transaction(user_state, user_address);
+
+                backup_wallet(&wallet)?;
+            }
+
+            {
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                let purge_diffs = distribution_list
+                    .into_iter()
+                    .filter(|v| v.receiver_address != user_address)
+                    .collect::<Vec<_>>();
+
+                service.merge_and_purge_asset(user_state, user_address, &purge_diffs, true)?;
+
+                backup_wallet(&wallet)?;
+            }
+
+            service.trigger_propose_block();
+
+            {
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                service.sign_proposed_block(user_state, user_address);
+
+                backup_wallet(&wallet)?;
+            }
+
             service.trigger_approve_block();
         }
         SubCommand::Assets {
@@ -441,23 +556,24 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     backup_wallet(&wallet)?;
                 }
 
+                // let receiver_address = Address::from_str(&receiver_address).unwrap();
+                if user_address == receiver_address {
+                    anyhow::bail!("cannot send asset to myself");
+                }
+
+                if amount == 0 || amount >= 1u64 << 56 {
+                    anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                }
+
                 {
                     let user_state = wallet
                         .data
                         .get_mut(&user_address)
                         .expect("user address was not found in wallet");
 
-                    // let receiver_address = Address::from_str(&receiver_address).unwrap();
-                    if user_address == receiver_address {
-                        anyhow::bail!("cannot send asset to myself");
-                    }
-
-                    if amount == 0 || amount >= 1u64 << 56 {
-                        anyhow::bail!("`amount` must be a positive integer less than 2^56");
-                    }
-
                     // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-                    let output_asset = Asset {
+                    let output_asset = ContributedAsset {
+                        receiver_address,
                         kind: TokenKind {
                             contract_address: contract_address
                                 // .map(|v| Address::from_str(&v).unwrap())
@@ -472,7 +588,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     service.merge_and_purge_asset(
                         user_state,
                         user_address,
-                        &[(receiver_address, output_asset)],
+                        &[output_asset],
                         true,
                     )?;
 
@@ -493,7 +609,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 }
 
                 service.trigger_approve_block();
-
             }
         },
         SubCommand::Block { block_command } => match block_command {
