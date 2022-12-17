@@ -68,6 +68,7 @@ enum SubCommand {
         user_address: Option<Address<F>>,
     },
     /// New tokens are issued and distributed according to the contents of the file.
+    /// Up to 16 tokens can be sent.
     ///
     /// template file: https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv
     #[structopt(name = "airdrop")]
