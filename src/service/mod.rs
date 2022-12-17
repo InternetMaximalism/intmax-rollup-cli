@@ -497,17 +497,15 @@ impl Config {
         Ok(resp)
     }
 
-    pub fn merge_and_purge_asset<
+    pub fn sync_sent_transaction<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
         &self,
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
-        purge_diffs: &[(Address<F>, Asset<F>)],
-        broadcast: bool,
     ) {
-        let (raw_merge_witnesses, last_seen_block_number) = self
+        let (mut raw_merge_witnesses, last_seen_block_number) = self
             .get_merge_transaction_witness(
                 user_address,
                 Some(user_state.last_seen_block_number),
@@ -608,6 +606,22 @@ impl Config {
             });
         }
 
+        user_state
+            .rest_received_assets
+            .append(&mut raw_merge_witnesses);
+        user_state.last_seen_block_number = last_seen_block_number;
+    }
+
+    pub fn merge_and_purge_asset<
+        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+        R: RootData<WrappedHashOut<F>> + Clone,
+    >(
+        &self,
+        user_state: &mut UserState<D, R>,
+        user_address: Address<F>,
+        purge_diffs: &[(Address<F>, Asset<F>)],
+        broadcast: bool,
+    ) {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
@@ -778,13 +792,9 @@ impl Config {
             );
         }
 
-        // user_state
-        //     .pending_transactions
-        //     .insert(transaction.tx_hash, removed_assets);
         user_state
             .sent_transactions
             .insert(transaction.tx_hash, (removed_assets, None));
-        user_state.last_seen_block_number = last_seen_block_number;
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
