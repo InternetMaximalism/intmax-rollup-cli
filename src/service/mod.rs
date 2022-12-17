@@ -380,108 +380,6 @@ impl Config {
     //     merge_witnesses
     // }
 
-    pub fn merge_received_asset<
-        D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
-        R: RootData<WrappedHashOut<F>> + Clone,
-    >(
-        &self, // unused
-        received_asset_witness: Vec<ReceivedAssetProof<F>>,
-        _user_address: Address<F>,
-        user_state: &mut UserState<D, R>,
-    ) -> Vec<MergeProof<F>> {
-        let mut merge_witnesses = vec![];
-        for witness in received_asset_witness {
-            // let pseudo_tx_hash = HashOut::ZERO;
-            let tx_hash = witness.diff_tree_inclusion_proof.1.value;
-            let asset_root = witness.diff_tree_inclusion_proof.2.value;
-
-            let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
-            let merge_key = if witness.is_deposit {
-                PoseidonHash::two_to_one(*tx_hash, block_hash).into()
-            } else {
-                tx_hash
-            };
-
-            // sender が cancel した transaction は受け取ることができない.
-            {
-                let is_valid_confirmed_block_number =
-                    witness.latest_account_tree_inclusion_proof.value.to_u32()
-                        == witness.diff_tree_inclusion_proof.0.block_number;
-                if !witness.is_deposit && !is_valid_confirmed_block_number {
-                    println!("The following transaction was canceled: {}", tx_hash);
-                    continue;
-                }
-            }
-
-            // 同じ transaction を二度 merge することはできない.
-            {
-                let asset_tree = PoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    user_state.asset_tree.roots_db.clone(),
-                );
-                let old_asset_root_with_merge_key = asset_tree.get(&merge_key).unwrap();
-                if old_asset_root_with_merge_key != Default::default() {
-                    println!("The following transaction has already merged: {}", tx_hash);
-                    continue;
-                }
-            }
-
-            for asset in witness.assets {
-                user_state.assets.add(asset.kind, asset.amount, merge_key);
-                user_state
-                    .asset_tree
-                    .set(
-                        merge_key,
-                        asset.kind.contract_address.to_hash_out().into(),
-                        asset.kind.variable_index.to_hash_out().into(),
-                        HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
-                    )
-                    .unwrap();
-            }
-
-            // witness.assets から asset_root が計算されることを検証する.
-            assert_eq!(
-                user_state.asset_tree.get_asset_root(&merge_key).unwrap(),
-                asset_root
-            );
-
-            let merge_process_proof = {
-                // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
-                let mut asset_tree = PoseidonSparseMerkleTree::new(
-                    user_state.asset_tree.nodes_db.clone(),
-                    RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-                );
-                let asset_root_with_merge_key = asset_tree
-                    .set(merge_key, Default::default())
-                    .unwrap()
-                    .old_value;
-
-                if cfg!(debug_assertion) {
-                    assert_eq!(
-                        *asset_root_with_merge_key,
-                        PoseidonHash::two_to_one(*asset_root, *merge_key)
-                    );
-                }
-
-                asset_tree
-                    .set(merge_key, asset_root_with_merge_key)
-                    .unwrap()
-            };
-            // dbg!(&merge_process_proof);
-
-            let merge_proof = MergeProof {
-                is_deposit: witness.is_deposit,
-                diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
-                merge_process_proof,
-                latest_account_tree_inclusion_proof: witness.latest_account_tree_inclusion_proof,
-                nonce: witness.nonce,
-            };
-            merge_witnesses.push(merge_proof);
-        }
-
-        merge_witnesses
-    }
-
     pub fn check_health(&self) -> anyhow::Result<ResponseCheckHealth> {
         let api_path = "/";
         let resp = reqwest::blocking::Client::new()
@@ -621,14 +519,18 @@ impl Config {
         user_address: Address<F>,
         purge_diffs: &[(Address<F>, Asset<F>)],
         broadcast: bool,
-    ) {
+    ) -> anyhow::Result<()> {
+        // 必要な output_assets が多すぎる場合, 送信は失敗する.
+        if purge_diffs.len() >= N_DIFFS / 2 {
+            anyhow::bail!("too many destinations and token kinds");
+        }
+
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
         let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
         let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
-        let merge_witnesses =
-            self.merge_received_asset(raw_merge_witnesses.clone(), user_address, user_state);
+        let merge_witnesses = calc_merge_witnesses(user_state, raw_merge_witnesses.clone());
 
         // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&middle_user_asset_root);
@@ -678,6 +580,11 @@ impl Config {
             let mut input_assets = vec![];
             let mut input_amount = 0;
             for asset in target_assets {
+                // 必要な input_assets が多すぎる場合, 送信は失敗する.
+                if purge_input_witness.len() >= N_DIFFS {
+                    anyhow::bail!("too many fragments of assets");
+                }
+
                 input_amount += asset.1;
                 input_assets.push(asset);
 
@@ -687,7 +594,7 @@ impl Config {
             }
 
             if output_amount > input_amount {
-                panic!("output asset amount is too much");
+                anyhow::bail!("output asset amount is too much");
             }
 
             // input (所有している分) と output (人に渡す分) の差額を自身に渡す
@@ -741,6 +648,8 @@ impl Config {
         }
 
         let nonce = WrappedHashOut::rand();
+
+        println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
 
         let transaction = self.send_assets(
             user_state.account,
@@ -797,6 +706,8 @@ impl Config {
         user_state
             .sent_transactions
             .insert(transaction.tx_hash, (removed_assets, None));
+
+        Ok(())
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
@@ -1267,4 +1178,104 @@ impl Config {
 
         Ok((resp.proofs, latest_block_number))
     }
+}
+
+pub fn calc_merge_witnesses<
+    D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
+    R: RootData<WrappedHashOut<F>> + Clone,
+>(
+    user_state: &mut UserState<D, R>,
+    received_asset_witness: Vec<ReceivedAssetProof<F>>,
+) -> Vec<MergeProof<F>> {
+    let mut merge_witnesses = vec![];
+    for witness in received_asset_witness {
+        // let pseudo_tx_hash = HashOut::ZERO;
+        let tx_hash = witness.diff_tree_inclusion_proof.1.value;
+        let asset_root = witness.diff_tree_inclusion_proof.2.value;
+
+        let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
+        let merge_key = if witness.is_deposit {
+            PoseidonHash::two_to_one(*tx_hash, block_hash).into()
+        } else {
+            tx_hash
+        };
+
+        // sender が cancel した transaction は受け取ることができない.
+        {
+            let is_valid_confirmed_block_number =
+                witness.latest_account_tree_inclusion_proof.value.to_u32()
+                    == witness.diff_tree_inclusion_proof.0.block_number;
+            if !witness.is_deposit && !is_valid_confirmed_block_number {
+                println!("The following transaction was canceled: {}", tx_hash);
+                continue;
+            }
+        }
+
+        // 同じ transaction を二度 merge することはできない.
+        {
+            let asset_tree = PoseidonSparseMerkleTree::new(
+                user_state.asset_tree.nodes_db.clone(),
+                user_state.asset_tree.roots_db.clone(),
+            );
+            let old_asset_root_with_merge_key = asset_tree.get(&merge_key).unwrap();
+            if old_asset_root_with_merge_key != Default::default() {
+                println!("The following transaction has already merged: {}", tx_hash);
+                continue;
+            }
+        }
+
+        for asset in witness.assets {
+            user_state.assets.add(asset.kind, asset.amount, merge_key);
+            user_state
+                .asset_tree
+                .set(
+                    merge_key,
+                    asset.kind.contract_address.to_hash_out().into(),
+                    asset.kind.variable_index.to_hash_out().into(),
+                    HashOut::from_partial(&[F::from_canonical_u64(asset.amount)]).into(),
+                )
+                .unwrap();
+        }
+
+        // witness.assets から asset_root が計算されることを検証する.
+        assert_eq!(
+            user_state.asset_tree.get_asset_root(&merge_key).unwrap(),
+            asset_root
+        );
+
+        let merge_process_proof = {
+            // ここでのシミュレーションは `user_state.asset_tree` に反映しない.
+            let mut asset_tree = PoseidonSparseMerkleTree::new(
+                user_state.asset_tree.nodes_db.clone(),
+                RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
+            );
+            let asset_root_with_merge_key = asset_tree
+                .set(merge_key, Default::default())
+                .unwrap()
+                .old_value;
+
+            if cfg!(debug_assertion) {
+                assert_eq!(
+                    *asset_root_with_merge_key,
+                    PoseidonHash::two_to_one(*asset_root, *merge_key)
+                );
+            }
+
+            asset_tree
+                .set(merge_key, asset_root_with_merge_key)
+                .unwrap()
+        };
+        // dbg!(&merge_process_proof);
+
+        let merge_proof = MergeProof {
+            is_deposit: witness.is_deposit,
+            diff_tree_inclusion_proof: witness.diff_tree_inclusion_proof,
+            merge_process_proof,
+            latest_account_tree_inclusion_proof: witness.latest_account_tree_inclusion_proof,
+            nonce: witness.nonce,
+        };
+        merge_witnesses.push(merge_proof);
+    }
+
+    merge_witnesses
 }

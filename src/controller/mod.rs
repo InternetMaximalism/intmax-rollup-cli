@@ -224,13 +224,17 @@ pub fn invoke_command() -> anyhow::Result<()> {
         WalletOnMemory::new(password.to_string())
     };
 
-    {
+    let backup_wallet = |wallet: &WalletOnMemory| -> anyhow::Result<()> {
         let encoded_wallet = serde_json::to_string(&wallet).unwrap();
         std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
         let mut file = File::create(wallet_file_path.clone())?;
         write!(file, "{}", encoded_wallet)?;
         file.flush()?;
-    }
+
+        Ok(())
+    };
+
+    backup_wallet(&wallet)?;
 
     match sub_command {
         SubCommand::Config { config_command } => match config_command {
@@ -277,11 +281,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     println!("set above account as default");
                 }
 
-                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                std::fs::create_dir(wallet_dir_path).unwrap_or(());
-                let mut file = File::create(wallet_file_path)?;
-                write!(file, "{}", encoded_wallet)?;
-                file.flush()?;
+                backup_wallet(&wallet)?;
 
                 service.trigger_propose_block();
                 service.trigger_approve_block();
@@ -318,11 +318,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         println!("set default account: null");
                     }
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path).unwrap_or(());
-                    let mut file = File::create(wallet_file_path)?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
             }
         },
@@ -404,11 +400,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                     service.sync_sent_transaction(user_state, user_address);
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                    let mut file = File::create(wallet_file_path.clone())?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
 
                 {
@@ -417,16 +409,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         .get_mut(&user_address)
                         .expect("user address was not found in wallet");
 
-                    println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
                     ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
-                    service.merge_and_purge_asset(user_state, user_address, &[], false);
+                    service.merge_and_purge_asset(user_state, user_address, &[], false)?;
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path).unwrap_or(());
-                    let mut file = File::create(wallet_file_path)?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
 
                 service.trigger_propose_block();
@@ -451,11 +438,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                     service.sync_sent_transaction(user_state, user_address);
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                    let mut file = File::create(wallet_file_path.clone())?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
 
                 {
@@ -484,7 +467,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         amount,
                     };
 
-                    println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
                     ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
                     service.merge_and_purge_asset(
@@ -492,13 +474,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         user_address,
                         &[(receiver_address, output_asset)],
                         true,
-                    );
+                    )?;
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                    let mut file = File::create(wallet_file_path.clone())?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
 
                 service.trigger_propose_block();
@@ -511,14 +489,11 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                     service.sign_proposed_block(user_state, user_address);
 
-                    let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                    let mut file = File::create(wallet_file_path.clone())?;
-                    write!(file, "{}", encoded_wallet)?;
-                    file.flush()?;
+                    backup_wallet(&wallet)?;
                 }
 
                 service.trigger_approve_block();
+
             }
         },
         SubCommand::Block { block_command } => match block_command {
@@ -536,11 +511,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 service.sign_proposed_block(user_state, user_address);
 
-                let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-                std::fs::create_dir(wallet_dir_path).unwrap_or(());
-                let mut file = File::create(wallet_file_path)?;
-                write!(file, "{}", encoded_wallet)?;
-                file.flush()?;
+                backup_wallet(&wallet)?;
             }
             BlockCommand::Approve {} => {
                 service.trigger_approve_block();
