@@ -509,9 +509,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         .get_mut(&user_address)
                         .expect("user address was not found in wallet");
 
-                    println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
                     service.sign_proposed_block(user_state, user_address);
 
                     let encoded_wallet = serde_json::to_string(&wallet).unwrap();
