@@ -384,7 +384,7 @@ impl Config {
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
-        &self,
+        &self, // unused
         received_asset_witness: Vec<ReceivedAssetProof<F>>,
         _user_address: Address<F>,
         user_state: &mut UserState<D, R>,
@@ -625,13 +625,10 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let added_merge_witnesses =
-            self.merge_received_asset(raw_merge_witnesses, user_address, user_state);
-        let merge_witnesses = queue_and_dequeue(
-            &mut user_state.rest_merge_witnesses,
-            added_merge_witnesses,
-            N_MERGES,
-        );
+        let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
+        let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
+        let merge_witnesses =
+            self.merge_received_asset(raw_merge_witnesses.clone(), user_address, user_state);
 
         // let middle_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&middle_user_asset_root);
@@ -755,6 +752,11 @@ impl Config {
         );
         // dbg!(transaction.diff_root);
 
+        // send API に含めた merge transaction は削除する.
+        user_state
+            .rest_received_assets
+            .retain(|v| !raw_merge_witnesses.iter().any(|w| v == w));
+
         // 宛先ごとに渡す asset を整理する
         let tx_diff_tree: PoseidonSparseMerkleTree<_, _> = tx_diff_tree.into();
         // key: receiver_address, value: (purge_output_inclusion_witness, assets)
@@ -821,7 +823,7 @@ impl Config {
 
         let body = serde_json::to_string(&payload).expect("fail to encode");
 
-        let api_path= "/tx/broadcast";
+        let api_path = "/tx/broadcast";
         #[cfg(feature = "verbose")]
         let start = {
             println!("start proving: request {api_path}");
