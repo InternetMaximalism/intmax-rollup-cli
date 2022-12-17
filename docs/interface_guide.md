@@ -46,6 +46,20 @@ intmax account set-default [user-address]
 intmax account set-default 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 ```
 
+## Export private key
+
+You can export your private key to a specified file.
+
+```
+intmax account export -f <file-path>
+```
+
+### Example
+
+```sh
+intmax account export -f ~/Documents/my-account
+```
+
 ## Mint token
 
 You can issue amount of tokens determined by a `token-id` with the same `contract-address` as your address.
@@ -90,4 +104,18 @@ Displays all currently owned assets. However, assets that have not yet been merg
 
 ```sh
 intmax assets
+```
+
+## Airdrop
+
+New tokens are issued and distributed according to the contents of the file. Up to 16 tokens can be sent.
+
+```
+intmax airdrop -f <file-path>
+```
+
+### Example
+
+```sh
+intmax airdrop -f ./tests/airdrop/example.csv
 ```

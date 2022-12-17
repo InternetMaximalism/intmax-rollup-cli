@@ -9,7 +9,7 @@ git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git
 cd intmax-rollup-cli
 cargo --version # 1.65.0-nightly
 cargo build --release
-alias intmax='./target/release/intmax-client'
+alias intmax='./target/release/intmax'
 intmax config aggregator-url https://prealpha.testnet.intmax.io/
 ```
 
@@ -59,6 +59,12 @@ Display your owned assets.
 
 ```sh
 intmax assets
+```
+
+### Airdrop
+
+```sh
+intmax airdrop -f ./tests/airdrop/example.csv
 ```
 
 ## How to Use
