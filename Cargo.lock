@@ -529,7 +529,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=493f60268ec762e65f3c19965d79236a7273e1d5#493f60268ec762e65f3c19965d79236a7273e1d5"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=d30a56c212cdd357af79dca5aa9efc1630e11fa4#d30a56c212cdd357af79dca5aa9efc1630e11fa4"
 dependencies = [
  "hex",
  "intmax-zkp-core",
@@ -542,15 +542,12 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=fde56c7e3caf6aee8aa3602d19001e60a4598f45#fde56c7e3caf6aee8aa3602d19001e60a4598f45"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=a996a66a9a0e3dad1f94127b7be2b3bca1d9e222#a996a66a9a0e3dad1f94127b7be2b3bca1d9e222"
 dependencies = [
  "anyhow",
  "hex",
  "num",
- "num-bigint",
- "num-traits",
  "plonky2",
- "plonky2_ecdsa",
  "rand",
  "serde",
  "serde-hex",
@@ -887,20 +884,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "plonky2_ecdsa"
-version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
-dependencies = [
- "anyhow",
- "itertools",
- "maybe_rayon",
- "num",
- "plonky2",
- "plonky2_u32",
- "serde",
-]
-
-[[package]]
 name = "plonky2_field"
 version = "0.1.0"
 source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
@@ -913,17 +896,6 @@ dependencies = [
  "serde",
  "static_assertions",
  "unroll",
-]
-
-[[package]]
-name = "plonky2_u32"
-version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
-dependencies = [
- "anyhow",
- "itertools",
- "num",
- "plonky2",
 ]
 
 [[package]]
