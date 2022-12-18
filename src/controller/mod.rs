@@ -67,21 +67,6 @@ enum SubCommand {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
-    /// New tokens are issued and distributed according to the contents of the file.
-    /// Up to 16 tokens can be sent.
-    ///
-    /// template file: https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv
-    #[structopt(name = "airdrop")]
-    AirDrop {
-        #[structopt(long)]
-        user_address: Option<Address<F>>,
-
-        /// CSV file path
-        #[structopt(long = "file", short = "f")]
-        csv_path: PathBuf,
-        // #[structopt(long)]
-        // json: Vec<ContributedAsset<F>>,
-    },
     /// Transaction commands
     #[structopt(name = "tx")]
     Transaction {
@@ -158,6 +143,10 @@ enum TransactionCommand {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
+    /// New tokens are issued and distributed according to the contents of the file.
+    /// Up to 16 tokens can be sent.
+    ///
+    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv .
     #[structopt(name = "bulk-mint")]
     BulkMint {
         #[structopt(long)]
@@ -169,6 +158,10 @@ enum TransactionCommand {
         // #[structopt(long)]
         // json: Vec<ContributedAsset<F>>,
     },
+    /// You can transfer owned tokens according to the contents of the file.
+    /// Up to 8 tokens can be sent together.
+    ///
+    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv .
     #[structopt(name = "bulk-transfer")]
     BulkTransfer {
         #[structopt(long)]
@@ -528,19 +521,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             service.trigger_propose_block();
             service.trigger_approve_block();
-        }
-        SubCommand::AirDrop {
-            user_address,
-            csv_path,
-            // json
-        } => {
-            let user_address =
-                parse_address(&wallet, user_address).expect("user address was not given");
-
-            let file = File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
-            let json = read_distribution_from_csv(user_address, file)?;
-
-            bulk_mint(&mut wallet, user_address, json, true)?;
         }
         SubCommand::Assets {
             user_address,

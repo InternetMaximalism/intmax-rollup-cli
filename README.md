@@ -39,7 +39,7 @@ intmax account add --default
 
 ### Mint your token
 
-Deposit your assets (the token contract address is the same with your address and the token id can be selected from 0x00 to 0xff).
+Mint your token. The token contract address is the same with your address and the token id can be selected from 0x00 to 0xff.
 
 ```sh
 intmax deposit --amount 10 -i 0x00
@@ -69,12 +69,12 @@ Display your owned assets.
 intmax assets
 ```
 
-### Airdrop
+### Bulk-mint
 
-New tokens are issued and distributed according to the contents of the file. Up to 16 tokens can be sent.
+You can issue new token according to the contents of the file. Up to 16 tokens can be sent together.
 
 ```sh
-intmax airdrop -f ./tests/airdrop/example.csv
+intmax tx bulk-mint -f ./tests/airdrop/example.csv
 ```
 
 ## How to Use
