@@ -175,7 +175,7 @@ impl Config {
     ) -> anyhow::Result<()> {
         for asset in deposit_list.iter() {
             if asset.kind.contract_address != user_address {
-                anyhow::bail!("contract address must be your user address");
+                anyhow::bail!("token address must be your user address");
             }
             if asset.amount == 0 || asset.amount >= 1u64 << 56 {
                 anyhow::bail!("`amount` must be a positive integer less than 2^56");

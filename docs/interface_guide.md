@@ -4,7 +4,8 @@ This page describes how to use it.
 
 ## Create account
 
-Creates a new account. If the default flag is given, it is used if user-address is omitted in commands that require it. A hex string with 0x-prefix of less than or equal to 32 bytes can be given as private key.
+Creates a new account. If the default flag is given, it is used if user-address is omitted in commands that require it.
+A hex string with 0x-prefix of less than or equal to 32 bytes can be given as private key.
 
 ```
 intmax account add [--default] [--private-key <private-key>]
@@ -62,7 +63,7 @@ intmax account export -f ~/Documents/my-account
 
 ## Mint token
 
-You can issue amount of tokens determined by a `token-id` with the same `contract-address` as your address.
+You can issue amount of tokens determined by a `token-id` with the same token address as your user address.
 
 ```
 intmax deposit -i <token-id> --amount <amount>
@@ -70,7 +71,7 @@ intmax deposit -i <token-id> --amount <amount>
 
 ### Example
 
-Deposit your assets (the token contract address is the same with your address, the token id can be selected 0x00 - 0xff and amount is an integer less than 2^56)
+Deposit your token (the token address is the same with your user address, the token id can be selected from 0x00 to 0xff and amount is an integer less than 2^56)
 
 ```
 intmax deposit -i 0x00 --amount 10
@@ -86,10 +87,11 @@ intmax tx merge
 
 ## Send token
 
-The token determined by `contract-address` and `token-id` is transferred to the `receiver-address` in amount. As in the case of issuing a token, if `contract-address` is omitted, it is treated as the same address as the receiver's own address.
+The token determined by `token-address` and `token-id` is transferred to the `receiver-address` in amount.
+As in the case of issuing a token, if `token-address` is omitted, it is treated as the same address as the receiver's own address.
 
 ```
-intmax tx send --receiver-address <receiver-address> [--contract-address <contract-address>] -i <token-id> --amount <amount>
+intmax tx send --receiver-address <receiver-address> [-a <token-address>] -i <token-id> --amount <amount>
 ```
 
 ### Example
@@ -106,16 +108,40 @@ Displays all currently owned assets. However, assets that have not yet been merg
 intmax assets
 ```
 
-## Airdrop
+## Bulk-mint
 
-New tokens are issued and distributed according to the contents of the file. Up to 16 tokens can be sent.
+You can issue new token according to the contents of the file. Up to 16 tokens can be sent together.
+For more information, see [Bulk-transfer File Format](./tests/airdrop/README.md).
 
 ```
-intmax airdrop -f <file-path>
+intmax tx bulk-mint -f <file-path>
 ```
 
 ### Example
 
 ```sh
-intmax airdrop -f ./tests/airdrop/example.csv
+intmax tx bulk-mint -f ./tests/airdrop/example2.csv
+```
+
+```sh
+intmax tx bulk-mint -f ./tests/airdrop/example4.csv
+```
+
+## Bulk-transfer
+
+You can transfer owned tokens according to the contents of the file. Up to 8 tokens can be sent together.
+For more information, see [Bulk-transfer File Format](./tests/airdrop/README.md).
+
+```
+intmax tx bulk-transfer -f <file-path>
+```
+
+### Example
+
+```sh
+intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
+```
+
+```sh
+intmax tx bulk-transfer -f ./tests/airdrop/example5.csv
 ```
