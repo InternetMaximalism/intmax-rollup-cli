@@ -569,10 +569,24 @@ pub fn invoke_command() -> anyhow::Result<()> {
         } => {
             let user_address =
                 parse_address(&wallet, user_address).expect("user address was not given");
+            {
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                service.sync_sent_transaction(user_state, user_address);
+
+                backup_wallet(&wallet)?;
+            }
+
             let user_state = wallet
                 .data
-                .get(&user_address)
+                .get_mut(&user_address)
                 .expect("user address was not found in wallet");
+
+            // NOTICE: ここでの `user_state` の変更はファイルに保存しない.
+            calc_merge_witnesses(user_state, user_state.rest_received_assets.clone());
 
             let total_amount_map = user_state.assets.calc_total_amount();
 
