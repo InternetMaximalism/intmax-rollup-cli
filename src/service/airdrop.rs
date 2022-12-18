@@ -34,7 +34,7 @@ pub fn read_distribution_from_csv(
         let data = separator.split(&row).into_iter().collect::<Vec<_>>();
         if data.len() < 5 {
             anyhow::bail!(
-                "Columns must be arranged in the following order from left to right: Contract Address, Recipient, Fungibility, Token ID, Amount. See {CSV_EXAMPLE_LINK} for more information."
+                "Columns must be arranged in the following order from left to right: Token Address, Recipient, Fungibility, Token ID, Amount. See {CSV_EXAMPLE_LINK} for more information."
             );
         }
 
@@ -43,7 +43,7 @@ pub fn read_distribution_from_csv(
         } else {
             Address::from_str(data[0]).map_err(|_| {
                 anyhow::anyhow!(
-                    "Given file included invalid recipient (row: {i}, column 0). See {CSV_EXAMPLE_LINK} for more information."
+                    "Given file included invalid token address (row: {i}, column 0). See {CSV_EXAMPLE_LINK} for more information."
                 )
             })?
         };

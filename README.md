@@ -39,7 +39,7 @@ intmax account add --default
 
 ### Mint your token
 
-Mint your token. The token contract address is the same with your address and the token id can be selected from 0x00 to 0xff.
+Mint your token. The token address is the same with your address and the token id can be selected from 0x00 to 0xff.
 
 ```sh
 intmax deposit --amount 10 -i 0x00

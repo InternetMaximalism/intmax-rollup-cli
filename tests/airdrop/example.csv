@@ -1,4 +1,4 @@
-Contract Address, Recipient, Fungibility, Token ID (NFT), Amount (FT)
+Token Address, Recipient, Fungibility, Token ID (NFT), Amount (FT)
 , 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d, NFT, 0x01, 1
 , 0xed638a2c58262c26fd1f2b00b4334f1993ccaaf022816cf7ac26f40d68036bde, NFT, 0x02, 1
 , 0xf8f7a24d218856363cab3c005f4d5a5ad92103e0e845aa6fa69b5bd0e302e53b, NFT, 0x03, 1

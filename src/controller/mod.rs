@@ -35,31 +35,35 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum SubCommand {
-    /// Config commands
+    /// configuration commands
     #[structopt(name = "config")]
     Config {
         #[structopt(subcommand)]
         config_command: ConfigCommand,
     },
-    /// Account commands
+    /// commands for accounts
     #[structopt(name = "account")]
     Account {
         #[structopt(subcommand)]
         account_command: AccountCommand,
     },
-    /// Mint your token.
+    /// Mint your token with the same token address as your user address.
     #[structopt(name = "deposit")]
     Deposit {
         #[structopt(long)]
         user_address: Option<Address<F>>,
-        // #[structopt(long)]
-        // contract_address: Address<F>,
-        /// `token-id` can be selected from 0x00 to 0xff.
+
+        /// `token-id` can be selected from 0x00 to 0xff. [default: 0x00]
         #[structopt(long = "token-id", short = "i")]
-        token_id: VariableIndex<F>,
+        token_id: Option<VariableIndex<F>>,
+
         /// `amount` must be a positive integer less than 2^56.
-        #[structopt(long)]
-        amount: u64,
+        #[structopt(long, short = "q")]
+        amount: Option<u64>,
+
+        /// Mint NFT (an alias of `--amount 1`).
+        #[structopt(long = "nft")]
+        is_nft: bool,
     },
     /// Display your assets.
     #[structopt(name = "assets")]
@@ -67,13 +71,13 @@ enum SubCommand {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
-    /// Transaction commands
+    /// commands for transactions
     #[structopt(name = "tx")]
     Transaction {
         #[structopt(subcommand)]
         tx_command: TransactionCommand,
     },
-    /// Block commands
+    /// commands for blocks
     #[structopt(name = "block")]
     Block {
         #[structopt(subcommand)]
@@ -83,9 +87,12 @@ enum SubCommand {
 
 #[derive(Debug, StructOpt)]
 enum ConfigCommand {
-    /// Set aggregator URL
+    /// Set aggregator to the specified URL. If omitted, the currently set URL are displayed.
     #[structopt(name = "aggregator-url")]
-    AggregatorUrl { aggregator_url: Option<String> },
+    AggregatorUrl {
+        /// aggregator URL
+        aggregator_url: Option<String>,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -96,22 +103,29 @@ enum AccountCommand {
     /// Add your account
     #[structopt(name = "add")]
     Add {
+        /// Specify private key. If not specified, it is chosen at random.
         #[structopt(long)]
         private_key: Option<WrappedHashOut<F>>,
+
+        /// Set as default account.
         #[structopt(long = "default")]
         is_default: bool,
     },
     /// List your addresses
     #[structopt(name = "list")]
     List {},
-    /// Set default account
+    /// Sets the default user account used when --user-address attribute is omitted in other commands.
     #[structopt(name = "set-default")]
-    SetDefault { user_address: Option<Address<F>> },
+    SetDefault {
+        /// default user address
+        user_address: Option<Address<F>>,
+    },
+    /// Export your default account to the specified file.
     Export {
         #[structopt(long)]
         user_address: Option<Address<F>>,
 
-        /// export file path
+        /// exported file path
         #[structopt(long = "file", short = "f")]
         file_path: PathBuf,
     },
@@ -119,32 +133,34 @@ enum AccountCommand {
 
 #[derive(Debug, StructOpt)]
 enum TransactionCommand {
-    /// Send a transaction and merge your own assets.
+    /// Send your owned token to others.
     #[structopt(name = "send")]
     Send {
         #[structopt(long)]
         user_address: Option<Address<F>>,
-        #[structopt(long)]
+        /// destination of a token
+        #[structopt(long, short = "r")]
         receiver_address: Address<F>,
-        #[structopt(long)]
+        /// token address
+        #[structopt(long = "token-address", short = "a")]
         contract_address: Option<Address<F>>,
         /// the token id can be selected from 0x00 to 0xff
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
         /// `amount` must be a positive integer less than 2^56.
-        #[structopt(long)]
+        #[structopt(long, short = "q")]
         amount: u64,
-        // #[structopt(long)]
-        // broadcast: bool,
     },
-    /// Merge your own assets.
+    /// [advanced command] Merge received your token.
+    /// This is usually performed automatically before you send the transaction.
+    /// Tokens sent by others cannot be moved until this operation is performed.
     #[structopt(name = "merge")]
     Merge {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
-    /// New tokens are issued and distributed according to the contents of the file.
-    /// Up to 16 tokens can be sent.
+    /// You can issue new token according to the contents of the file.
+    /// Up to 16 tokens can be sent together.
     ///
     /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv .
     #[structopt(name = "bulk-mint")]
@@ -177,19 +193,22 @@ enum TransactionCommand {
 
 #[derive(Debug, StructOpt)]
 enum BlockCommand {
-    /// Trigger to propose a block.
-    #[structopt(name = "propose")]
-    Propose {},
-    /// Sign the diff.
+    // /// Trigger to propose a block.
+    // #[structopt(name = "propose")]
+    // Propose {},
+    /// [advanced command] Sign to the proposal block.
+    /// It is usually performed automatically after the transaction has been executed.
+    /// If you do not sign the proposal block containing your transaction by the deadline,
+    /// the transaction is reverted.
     #[structopt(name = "sign")]
     Sign {
         #[structopt(long)]
         user_address: Option<Address<F>>,
     },
-    /// Trigger to approve a block.
-    #[structopt(name = "approve")]
-    Approve {},
-    /// Verify a approved block.
+    // /// Trigger to approve a block.
+    // #[structopt(name = "approve")]
+    // Approve {},
+    /// [advanced command] Verify a approved block.
     #[structopt(name = "verify")]
     Verify {
         #[structopt(long, short = "n")]
@@ -333,7 +352,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             let mut deposit_list = distribution_list.clone();
             for deposit_info in deposit_list.iter() {
                 if deposit_info.kind.contract_address != user_address {
-                    anyhow::bail!("The contract address must be your user address. You can only issue new tokens linked to your user address.");
+                    anyhow::bail!("The token address must be your user address. You can only issue new tokens linked to your user address.");
                 }
             }
 
@@ -460,18 +479,19 @@ pub fn invoke_command() -> anyhow::Result<()> {
             }
             AccountCommand::SetDefault { user_address } => {
                 let account_list = wallet.data.keys().cloned().collect::<Vec<_>>();
-                if !account_list.iter().any(|v| Some(*v) == user_address) {
-                    println!("given account does not exist in your wallet");
-                } else {
-                    wallet.set_default_account(user_address);
-                    if let Some(user_address) = user_address {
+                if let Some(user_address) = user_address {
+                    if account_list.iter().any(|v| v == &user_address) {
+                        wallet.set_default_account(Some(user_address));
                         println!("set default account: {}", user_address);
                     } else {
-                        println!("set default account: null");
+                        println!("given account does not exist in your wallet");
                     }
-
-                    backup_wallet(&wallet)?;
+                } else {
+                    wallet.set_default_account(None);
+                    println!("set default account: null");
                 }
+
+                backup_wallet(&wallet)?;
             }
             AccountCommand::Export {
                 user_address,
@@ -497,6 +517,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             user_address,
             token_id: variable_index,
             amount,
+            is_nft,
         } => {
             let user_address =
                 parse_address(&wallet, user_address).expect("user address was not given");
@@ -507,6 +528,26 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             // receiver_address と同じ contract_address をもつトークンしか mint できない
             let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
+            let variable_index = if let Some(variable_index) = variable_index {
+                variable_index
+            } else {
+                if is_nft {
+                    anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
+                }
+
+                0u8.into()
+            };
+            let amount = if let Some(amount) = amount {
+                if is_nft {
+                    println!("--nft flag was ignored because of --amount attribute");
+                }
+
+                amount
+            } else if is_nft {
+                1
+            } else {
+                anyhow::bail!("you cannot omit --amount attribute without --nft flag");
+            };
 
             // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
             let deposit_info = ContributedAsset {
@@ -535,7 +576,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             let total_amount_map = user_state.assets.calc_total_amount();
 
-            let separator = "-----------------------------------------------------------------------------------------";
+            let separator = "--------------------------------------------------------------------------------------";
             println!("User: {}", user_address);
             println!("{}", separator);
             if total_amount_map.is_empty() {
@@ -543,9 +584,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 println!("{}", separator);
             } else {
                 for (kind, total_amount) in total_amount_map {
-                    println!("  Contract Address | {}", kind.contract_address);
-                    println!("  Token ID         | {}", kind.variable_index);
-                    println!("  Amount           | {}", total_amount);
+                    println!("  Token Address | {}", kind.contract_address);
+                    println!("  Token ID      | {}", kind.variable_index);
+                    println!("  Amount        | {}", total_amount);
                     println!("{}", separator);
                 }
             }
@@ -694,9 +735,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
             }
         },
         SubCommand::Block { block_command } => match block_command {
-            BlockCommand::Propose {} => {
-                service.trigger_propose_block();
-            }
+            // BlockCommand::Propose {} => {
+            //     service.trigger_propose_block();
+            // }
             BlockCommand::Sign { user_address } => {
                 println!("block sign");
                 let user_address =
@@ -710,9 +751,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 backup_wallet(&wallet)?;
             }
-            BlockCommand::Approve {} => {
-                service.trigger_approve_block();
-            }
+            // BlockCommand::Approve {} => {
+            //     service.trigger_approve_block();
+            // }
             BlockCommand::Verify { block_number } => {
                 service.verify_block(block_number).unwrap();
             }

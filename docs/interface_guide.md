@@ -4,7 +4,8 @@ This page describes how to use it.
 
 ## Create account
 
-Creates a new account. If the default flag is given, it is used if user-address is omitted in commands that require it. A hex string with 0x-prefix of less than or equal to 32 bytes can be given as private key.
+Creates a new account. If the default flag is given, it is used if user-address is omitted in commands that require it.
+A hex string with 0x-prefix of less than or equal to 32 bytes can be given as private key.
 
 ```
 intmax account add [--default] [--private-key <private-key>]
@@ -62,7 +63,7 @@ intmax account export -f ~/Documents/my-account
 
 ## Mint token
 
-You can issue amount of tokens determined by a `token-id` with the same `contract-address` as your address.
+You can issue amount of tokens determined by a `token-id` with the same token address as your user address.
 
 ```
 intmax deposit -i <token-id> --amount <amount>
@@ -70,7 +71,7 @@ intmax deposit -i <token-id> --amount <amount>
 
 ### Example
 
-Deposit your assets (the token contract address is the same with your address, the token id can be selected from 0x00 to 0xff and amount is an integer less than 2^56)
+Deposit your token (the token address is the same with your user address, the token id can be selected from 0x00 to 0xff and amount is an integer less than 2^56)
 
 ```
 intmax deposit -i 0x00 --amount 10
@@ -86,10 +87,11 @@ intmax tx merge
 
 ## Send token
 
-The token determined by `contract-address` and `token-id` is transferred to the `receiver-address` in amount. As in the case of issuing a token, if `contract-address` is omitted, it is treated as the same address as the receiver's own address.
+The token determined by `token-address` and `token-id` is transferred to the `receiver-address` in amount.
+As in the case of issuing a token, if `token-address` is omitted, it is treated as the same address as the receiver's own address.
 
 ```
-intmax tx send --receiver-address <receiver-address> [--contract-address <contract-address>] -i <token-id> --amount <amount>
+intmax tx send --receiver-address <receiver-address> [-a <token-address>] -i <token-id> --amount <amount>
 ```
 
 ### Example
