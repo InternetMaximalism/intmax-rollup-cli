@@ -54,7 +54,7 @@ enum SubCommand {
         user_address: Option<Address<F>>,
         // #[structopt(long)]
         // contract_address: Address<F>,
-        /// `token-id` can be selected 0x00 - 0xff.
+        /// `token-id` can be selected from 0x00 to 0xff.
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
         /// `amount` must be a positive integer less than 2^56.
@@ -143,7 +143,7 @@ enum TransactionCommand {
         receiver_address: Address<F>,
         #[structopt(long)]
         contract_address: Option<Address<F>>,
-        /// the token id can be selected 0x00 - 0xff
+        /// the token id can be selected from 0x00 to 0xff
         #[structopt(long = "token-id", short = "i")]
         token_id: VariableIndex<F>,
         /// `amount` must be a positive integer less than 2^56.
@@ -279,7 +279,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
     let bulk_mint = |wallet: &mut WalletOnMemory,
                      user_address: Address<F>,
-                     distribution_list: Vec<ContributedAsset<F>>|
+                     distribution_list: Vec<ContributedAsset<F>>,
+                     need_deposit: bool|
      -> anyhow::Result<()> {
         {
             let user_state = wallet
@@ -328,8 +329,22 @@ pub fn invoke_command() -> anyhow::Result<()> {
             if !user_state.rest_received_assets.is_empty() {
                 anyhow::bail!("receive all assets sent to you in advance");
             }
+        }
+
+        if need_deposit {
+            let user_state = wallet
+                .data
+                .get_mut(&user_address)
+                .expect("user address was not found in wallet");
 
             let mut deposit_list = distribution_list.clone();
+            for deposit_info in deposit_list.iter() {
+                if deposit_info.kind.contract_address != user_address {
+                    anyhow::bail!("The contract address must be your user address. You can only issue new tokens linked to your user address.");
+                }
+            }
+
+            // 他人に対してトークンを発行する場合でも, まずは自分に対して deposit する.
             deposit_list
                 .iter_mut()
                 .for_each(|v| v.receiver_address = user_address);
@@ -525,7 +540,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             let file = File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
             let json = read_distribution_from_csv(user_address, file)?;
 
-            bulk_mint(&mut wallet, user_address, json)?;
+            bulk_mint(&mut wallet, user_address, json, true)?;
         }
         SubCommand::Assets {
             user_address,
@@ -681,7 +696,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
                 let json = read_distribution_from_csv(user_address, file)?;
 
-                bulk_mint(&mut wallet, user_address, json)?;
+                bulk_mint(&mut wallet, user_address, json, true)?;
             }
             TransactionCommand::BulkTransfer {
                 user_address,
@@ -695,7 +710,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
                 let json = read_distribution_from_csv(user_address, file)?;
 
-                bulk_mint(&mut wallet, user_address, json)?;
+                bulk_mint(&mut wallet, user_address, json, false)?;
             }
         },
         SubCommand::Block { block_command } => match block_command {

@@ -70,7 +70,7 @@ intmax deposit -i <token-id> --amount <amount>
 
 ### Example
 
-Deposit your assets (the token contract address is the same with your address, the token id can be selected 0x00 - 0xff and amount is an integer less than 2^56)
+Deposit your assets (the token contract address is the same with your address, the token id can be selected from 0x00 to 0xff and amount is an integer less than 2^56)
 
 ```
 intmax deposit -i 0x00 --amount 10
@@ -109,6 +109,7 @@ intmax assets
 ## Airdrop
 
 New tokens are issued and distributed according to the contents of the file. Up to 16 tokens can be sent.
+For more information, see [Bulk-transfer File Format](./tests/airdrop/README.md).
 
 ```
 intmax airdrop -f <file-path>
