@@ -129,6 +129,9 @@ enum AccountCommand {
         #[structopt(long = "file", short = "f")]
         file_path: PathBuf,
     },
+    /// [upcoming features] Output the possession proof of your assets.
+    #[structopt(name = "possession-proof")]
+    PossessionProof {},
 }
 
 #[derive(Debug, StructOpt)]
@@ -189,6 +192,9 @@ enum TransactionCommand {
         // #[structopt(long)]
         // json: Vec<ContributedAsset<F>>,
     },
+    /// [upcoming features] Exchange tokens with a specified user.
+    #[structopt(name = "swap")]
+    Swap {},
 }
 
 #[derive(Debug, StructOpt)]
@@ -556,6 +562,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let account = user_state.account;
                 write!(file, "{}", serde_json::to_string(&account)?)?;
             }
+            AccountCommand::PossessionProof { .. } => {
+                anyhow::bail!("This is a upcoming feature.");
+            }
         },
         SubCommand::Deposit {
             user_address,
@@ -739,6 +748,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let json = read_distribution_from_csv(user_address, file)?;
 
                 bulk_mint(&mut wallet, user_address, json, false)?;
+            }
+            TransactionCommand::Swap { .. } => {
+                anyhow::bail!("This is a upcoming feature.");
             }
         },
         SubCommand::Block { block_command } => match block_command {

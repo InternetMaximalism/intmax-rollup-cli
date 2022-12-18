@@ -140,7 +140,7 @@ impl Config {
         let api_path = "/account/register";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -192,7 +192,7 @@ impl Config {
         let api_path = "/test/deposit/add";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -287,7 +287,7 @@ impl Config {
         let api_path = "/tx/send";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -775,7 +775,7 @@ impl Config {
         let api_path = "/tx/broadcast";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -810,7 +810,7 @@ impl Config {
         let api_path = "/block/propose";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -841,7 +841,7 @@ impl Config {
         let api_path = "/block/approve";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -941,7 +941,7 @@ impl Config {
         let api_path = "/block/latest";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -986,7 +986,7 @@ impl Config {
         let api_path = "/block";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -1014,7 +1014,7 @@ impl Config {
         let api_path = "/block/detail";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -1112,7 +1112,7 @@ impl Config {
         let api_path = "/tx/receipt";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
@@ -1148,7 +1148,7 @@ impl Config {
         let api_path = "/signed-diff/send";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let resp = reqwest::blocking::Client::new()
@@ -1195,7 +1195,7 @@ impl Config {
         let api_path = "/asset/received";
         #[cfg(feature = "verbose")]
         let start = {
-            println!("start proving: request {api_path}");
+            println!("request {api_path}");
             Instant::now()
         };
         let request = reqwest::blocking::Client::new()
