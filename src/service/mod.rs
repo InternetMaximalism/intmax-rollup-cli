@@ -178,7 +178,7 @@ impl Config {
                 anyhow::bail!("token address must be your user address");
             }
             if asset.amount == 0 || asset.amount >= 1u64 << 56 {
-                anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                anyhow::bail!("deposit amount must be a positive integer less than 2^56");
             }
         }
 
@@ -545,6 +545,13 @@ impl Config {
         // dbg!(&old_user_asset_root);
 
         let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
+        #[cfg(feature = "verbose")]
+        dbg!(user_state.rest_received_assets.len());
+
+        if dequeued_len == 0 && purge_diffs.is_empty() {
+            anyhow::bail!("nothing to do");
+        }
+
         let raw_merge_witnesses = user_state.rest_received_assets[0..dequeued_len].to_vec();
         let merge_witnesses = calc_merge_witnesses(user_state, raw_merge_witnesses.clone());
 
@@ -561,6 +568,10 @@ impl Config {
         let mut purge_output_witness = vec![];
         let mut output_asset_map = HashMap::new();
         for output_asset in purge_diffs {
+            if output_asset.amount == 0 || output_asset.amount >= 1u64 << 56 {
+                anyhow::bail!("sending amount must be a positive integer less than 2^56");
+            }
+
             // dbg!(receiver_address.to_string(), output_asset);
             let output_witness = tx_diff_tree
                 .set(
