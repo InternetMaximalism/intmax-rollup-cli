@@ -111,7 +111,7 @@ intmax assets
 ## Bulk-mint
 
 You can issue new token according to the contents of the file. Up to 16 tokens can be sent together.
-For more information, see [Bulk-transfer File Format](./tests/airdrop/README.md).
+For more information, see [Bulk-transfer File Format](../tests/airdrop/README.md).
 
 ```
 intmax tx bulk-mint -f <file-path>
@@ -123,14 +123,10 @@ intmax tx bulk-mint -f <file-path>
 intmax tx bulk-mint -f ./tests/airdrop/example2.csv
 ```
 
-```sh
-intmax tx bulk-mint -f ./tests/airdrop/example4.csv
-```
-
 ## Bulk-transfer
 
 You can transfer owned tokens according to the contents of the file. Up to 8 tokens can be sent together.
-For more information, see [Bulk-transfer File Format](./tests/airdrop/README.md).
+For more information, see [Bulk-transfer File Format](../tests/airdrop/README.md).
 
 ```
 intmax tx bulk-transfer -f <file-path>
@@ -140,8 +136,4 @@ intmax tx bulk-transfer -f <file-path>
 
 ```sh
 intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
-```
-
-```sh
-intmax tx bulk-transfer -f ./tests/airdrop/example5.csv
 ```

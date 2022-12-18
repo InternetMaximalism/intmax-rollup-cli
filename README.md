@@ -77,6 +77,15 @@ You can issue new token according to the contents of the file. Up to 16 tokens c
 intmax tx bulk-mint -f ./tests/airdrop/example.csv
 ```
 
+### Bulk-transfer
+
+You can transfer owned tokens according to the contents of the file. Up to 8 tokens can be sent together.
+
+```sh
+intmax tx bulk-mint -f ./tests/airdrop/example2.csv
+intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
+```
+
 ## How to Use
 
 [Interface Guide](./docs/interface_guide.md)
