@@ -15,6 +15,14 @@ intmax config aggregator-url https://prealpha.testnet.intmax.io/
 
 ## Getting Started
 
+### Help
+
+Display the help page.
+
+```sh
+intmax -h
+```
+
 ### Create your account
 
 Initializing your wallet and delete your all accounts.
@@ -62,6 +70,8 @@ intmax assets
 ```
 
 ### Airdrop
+
+New tokens are issued and distributed according to the contents of the file. Up to 16 tokens can be sent.
 
 ```sh
 intmax airdrop -f ./tests/airdrop/example.csv
