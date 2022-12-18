@@ -53,14 +53,6 @@ Merge your assets and Send your token to other accounts.
 intmax tx send --amount 1 -i 0x00 --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 ```
 
-### Reflect the results of the remittance
-
-Merge your assets.
-
-```sh
-intmax tx merge
-```
-
 ### Display your assets
 
 Display your owned assets.
