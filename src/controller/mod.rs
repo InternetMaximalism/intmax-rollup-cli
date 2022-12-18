@@ -289,10 +289,40 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
     backup_wallet(&wallet)?;
 
-    let bulk_mint = |wallet: &mut WalletOnMemory,
-                     user_address: Address<F>,
-                     distribution_list: Vec<ContributedAsset<F>>,
-                     need_deposit: bool|
+    // マージしていない差分が残り `num_unmerged` 個以下になるまでマージ処理を繰り返す.
+    // 1 回のループで `N_MERGES` 個ずつ減っていく.
+    let merge = |wallet: &mut WalletOnMemory,
+                 user_address: Address<F>,
+                 num_unmerged: usize|
+     -> anyhow::Result<()> {
+        loop {
+            let user_state = wallet
+                .data
+                .get_mut(&user_address)
+                .expect("user address was not found in wallet");
+
+            if user_state.rest_received_assets.len() <= num_unmerged {
+                #[cfg(feature = "verbose")]
+                println!("the number of unmerged differences is sufficiently small");
+                break;
+            }
+
+            // 前の行で break しなかった場合, `user_state.rest_received_assets.len()` は 0 でないので,
+            // "nothing to do" のエラーはハンドルする必要がない.
+            service.merge_and_purge_asset(user_state, user_address, &[], false)?;
+
+            backup_wallet(wallet)?;
+
+            service.trigger_propose_block();
+            service.trigger_approve_block();
+        }
+
+        Ok(())
+    };
+
+    let transfer = |wallet: &mut WalletOnMemory,
+                    user_address: Address<F>,
+                    purge_diffs: &[ContributedAsset<F>]|
      -> anyhow::Result<()> {
         {
             let user_state = wallet
@@ -304,6 +334,66 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             backup_wallet(wallet)?;
         }
+
+        // マージしていない差分が残り `N_MERGES` 個になるまでマージを繰り返す.
+        // 残った差分は purge と一緒のトランザクションに含める.
+        merge(wallet, user_address, N_MERGES)?;
+
+        {
+            let user_state = wallet
+                .data
+                .get_mut(&user_address)
+                .expect("user address was not found in wallet");
+
+            let result = service.merge_and_purge_asset(user_state, user_address, purge_diffs, true);
+            match result {
+                Ok(_) => {}
+                Err(err) => {
+                    if err.to_string() == "nothing to do" {
+                        #[cfg(feature = "verbose")]
+                        println!("nothing to do");
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
+
+            backup_wallet(wallet)?;
+        }
+
+        service.trigger_propose_block();
+
+        {
+            let user_state = wallet
+                .data
+                .get_mut(&user_address)
+                .expect("user address was not found in wallet");
+
+            service.sign_proposed_block(user_state, user_address);
+
+            backup_wallet(wallet)?;
+        }
+
+        service.trigger_approve_block();
+
+        Ok(())
+    };
+
+    let bulk_mint = |wallet: &mut WalletOnMemory,
+                     user_address: Address<F>,
+                     distribution_list: Vec<ContributedAsset<F>>,
+                     need_deposit: bool|
+     -> anyhow::Result<()> {
+        // {
+        //     let user_state = wallet
+        //         .data
+        //         .get_mut(&user_address)
+        //         .expect("user address was not found in wallet");
+
+        //     service.sync_sent_transaction(user_state, user_address);
+
+        //     backup_wallet(wallet)?;
+        // }
 
         // 宛先とトークンごとに整理する.
         let mut distribution_map: HashMap<(Address<F>, TokenKind<F>), u64> = HashMap::new();
@@ -332,23 +422,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             anyhow::bail!("too many destinations and token kinds");
         }
 
-        {
-            let user_state = wallet
-                .data
-                .get_mut(&user_address)
-                .expect("user address was not found in wallet");
-
-            if !user_state.rest_received_assets.is_empty() {
-                anyhow::bail!("receive all assets sent to you in advance");
-            }
-        }
-
         if need_deposit {
-            let user_state = wallet
-                .data
-                .get_mut(&user_address)
-                .expect("user address was not found in wallet");
-
             let mut deposit_list = distribution_list.clone();
             for deposit_info in deposit_list.iter() {
                 if deposit_info.kind.contract_address != user_address {
@@ -361,48 +435,18 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .iter_mut()
                 .for_each(|v| v.receiver_address = user_address);
 
-            ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
             service.deposit_assets(user_address, deposit_list)?;
 
             service.trigger_propose_block();
             service.trigger_approve_block();
-
-            service.sync_sent_transaction(user_state, user_address);
-
-            backup_wallet(wallet)?;
         }
 
-        {
-            let user_state = wallet
-                .data
-                .get_mut(&user_address)
-                .expect("user address was not found in wallet");
+        let purge_diffs = distribution_list
+            .into_iter()
+            .filter(|v| v.receiver_address != user_address)
+            .collect::<Vec<_>>();
 
-            let purge_diffs = distribution_list
-                .into_iter()
-                .filter(|v| v.receiver_address != user_address)
-                .collect::<Vec<_>>();
-
-            service.merge_and_purge_asset(user_state, user_address, &purge_diffs, true)?;
-
-            backup_wallet(wallet)?;
-        }
-
-        service.trigger_propose_block();
-
-        {
-            let user_state = wallet
-                .data
-                .get_mut(&user_address)
-                .expect("user address was not found in wallet");
-
-            service.sign_proposed_block(user_state, user_address);
-
-            backup_wallet(wallet)?;
-        }
-
-        service.trigger_approve_block();
+        transfer(wallet, user_address, &purge_diffs)?;
 
         Ok(())
     };
@@ -627,22 +671,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     backup_wallet(&wallet)?;
                 }
 
-                {
-                    let user_state = wallet
-                        .data
-                        .get_mut(&user_address)
-                        .expect("user address was not found in wallet");
+                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                    service.merge_and_purge_asset(user_state, user_address, &[], false)?;
-
-                    backup_wallet(&wallet)?;
-                }
-
-                service.trigger_propose_block();
-                // service.sign_proposed_block(user_state, user_address);
-                service.trigger_approve_block();
+                merge(&mut wallet, user_address, 0)?;
             }
             TransactionCommand::Send {
                 user_address,
@@ -654,17 +685,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let user_address =
                     parse_address(&wallet, user_address).expect("user address was not given");
 
-                {
-                    let user_state = wallet
-                        .data
-                        .get_mut(&user_address)
-                        .expect("user address was not found in wallet");
-
-                    service.sync_sent_transaction(user_state, user_address);
-
-                    backup_wallet(&wallet)?;
-                }
-
                 // let receiver_address = Address::from_str(&receiver_address).unwrap();
                 if user_address == receiver_address {
                     anyhow::bail!("cannot send asset to myself");
@@ -674,50 +694,21 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     anyhow::bail!("`amount` must be a positive integer less than 2^56");
                 }
 
-                {
-                    let user_state = wallet
-                        .data
-                        .get_mut(&user_address)
-                        .expect("user address was not found in wallet");
+                // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                let output_asset = ContributedAsset {
+                    receiver_address,
+                    kind: TokenKind {
+                        contract_address: contract_address
+                            // .map(|v| Address::from_str(&v).unwrap())
+                            .unwrap_or(user_address),
+                        variable_index,
+                    },
+                    amount,
+                };
 
-                    // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-                    let output_asset = ContributedAsset {
-                        receiver_address,
-                        kind: TokenKind {
-                            contract_address: contract_address
-                                // .map(|v| Address::from_str(&v).unwrap())
-                                .unwrap_or(user_address),
-                            variable_index,
-                        },
-                        amount,
-                    };
+                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                    service.merge_and_purge_asset(
-                        user_state,
-                        user_address,
-                        &[output_asset],
-                        true,
-                    )?;
-
-                    backup_wallet(&wallet)?;
-                }
-
-                service.trigger_propose_block();
-
-                {
-                    let user_state = wallet
-                        .data
-                        .get_mut(&user_address)
-                        .expect("user address was not found in wallet");
-
-                    service.sign_proposed_block(user_state, user_address);
-
-                    backup_wallet(&wallet)?;
-                }
-
-                service.trigger_approve_block();
+                transfer(&mut wallet, user_address, &[output_asset])?;
             }
             TransactionCommand::BulkMint {
                 user_address,
@@ -730,6 +721,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 let file =
                     File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
                 let json = read_distribution_from_csv(user_address, file)?;
+
+                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
                 bulk_mint(&mut wallet, user_address, json, true)?;
             }

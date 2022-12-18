@@ -77,14 +77,6 @@ Deposit your token (the token address is the same with your user address, the to
 intmax deposit -i 0x00 --amount 10
 ```
 
-### Merge token
-
-Receive issued or transferred tokens and reflect them as their own assets.
-
-```sh
-intmax tx merge
-```
-
 ## Send token
 
 The token determined by `token-address` and `token-id` is transferred to the `receiver-address` in amount.
@@ -102,7 +94,7 @@ intmax tx send --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f9
 
 ## Display assets
 
-Displays all currently owned assets. However, assets that have not yet been merged are not counted.
+Displays all currently owned assets.
 
 ```sh
 intmax assets
