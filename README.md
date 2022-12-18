@@ -63,7 +63,7 @@ intmax assets
 
 ### Bulk-mint
 
-You can issue new token according to the contents of the file. Up to 16 tokens can be sent together.
+You can issue new token according to the contents of the file. Up to 16 tokens can be sent together in the testnet.
 
 ```sh
 intmax tx bulk-mint -f ./tests/airdrop/example.csv
@@ -71,7 +71,8 @@ intmax tx bulk-mint -f ./tests/airdrop/example.csv
 
 ### Bulk-transfer
 
-You can transfer owned tokens according to the contents of the file. Up to 8 tokens can be sent together.
+You can transfer owned tokens according to the contents of the file. You can send several tokens together in one transaciton.
+The number of this aggregation is limited to 8 tokens in the testnet, and will be set to maximum 1024 in the mainnet.
 
 ```sh
 intmax tx bulk-mint -f ./tests/airdrop/example2.csv
