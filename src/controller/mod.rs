@@ -238,6 +238,16 @@ pub fn parse_address<W: Wallet>(
     }
 }
 
+pub fn get_input(prompt: &str) -> String {
+    println!("{}", prompt);
+    let mut input = String::new();
+    match std::io::stdin().read_line(&mut input) {
+        Ok(_goes_into_input_above) => {}
+        Err(_no_updates_is_fine) => {}
+    }
+    input.trim().to_string()
+}
+
 pub fn invoke_command() -> anyhow::Result<()> {
     let mut intmax_dir = dirs::home_dir().expect("fail to get home directory");
     intmax_dir.push(".intmax");
@@ -270,22 +280,6 @@ pub fn invoke_command() -> anyhow::Result<()> {
     let mut wallet_file_path = wallet_dir_path.clone();
     wallet_file_path.push("wallet");
 
-    let Cli { sub_command } = Cli::from_args();
-
-    let password = "password";
-    let mut wallet = if let SubCommand::Account {
-        account_command: AccountCommand::Reset {},
-    } = sub_command
-    {
-        WalletOnMemory::new(password.to_string())
-    } else if let Ok(mut file) = File::open(wallet_file_path.clone()) {
-        let mut encoded_wallet = String::new();
-        file.read_to_string(&mut encoded_wallet)?;
-        serde_json::from_str(&encoded_wallet).unwrap()
-    } else {
-        WalletOnMemory::new(password.to_string())
-    };
-
     let backup_wallet = |wallet: &WalletOnMemory| -> anyhow::Result<()> {
         let encoded_wallet = serde_json::to_string(&wallet).unwrap();
         std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
@@ -296,7 +290,52 @@ pub fn invoke_command() -> anyhow::Result<()> {
         Ok(())
     };
 
-    backup_wallet(&wallet)?;
+    let Cli { sub_command } = Cli::from_args();
+
+    let password = "password"; // unused
+    if let SubCommand::Account {
+        account_command: AccountCommand::Reset {},
+    } = sub_command
+    {
+        // 本当に実行しますか？
+        let response = get_input(
+            "This operation cannot be undone. Do you really want to reset the wallet? [y/N]",
+        );
+        if response.to_lowercase() != "y" {
+            println!("Wallet was not reset");
+
+            return Ok(());
+        }
+
+        let wallet = WalletOnMemory::new(password.to_string());
+
+        backup_wallet(&wallet)?;
+
+        println!("Wallet initialized");
+
+        return Ok(());
+    }
+
+    let mut wallet = {
+        let result = File::open(wallet_file_path.clone()).and_then(|mut file| {
+            let mut encoded_wallet = String::new();
+            file.read_to_string(&mut encoded_wallet)?;
+            let wallet = serde_json::from_str(&encoded_wallet)?;
+
+            Ok(wallet)
+        });
+        if let Ok(wallet) = result {
+            wallet
+        } else {
+            let wallet = WalletOnMemory::new(password.to_string());
+
+            backup_wallet(&wallet)?;
+
+            println!("Wallet initialized");
+
+            wallet
+        }
+    };
 
     // マージしていない差分が残り `num_unmerged` 個以下になるまでマージ処理を繰り返す.
     // 1 回のループで `N_MERGES` 個ずつ減っていく.
@@ -550,8 +589,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 user_address,
                 file_path,
             } => {
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
+                let user_address = parse_address(&wallet, user_address)
+                    .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
                 let user_state = wallet
                     .data
                     .get(&user_address)
@@ -575,8 +614,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
             amount,
             is_nft,
         } => {
-            let user_address =
-                parse_address(&wallet, user_address).expect("user address was not given");
+            let user_address = parse_address(&wallet, user_address)
+                .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
             let _user_state = wallet
                 .data
                 .get(&user_address)
@@ -629,8 +668,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
             user_address,
             // verbose,
         } => {
-            let user_address =
-                parse_address(&wallet, user_address).expect("user address was not given");
+            let user_address = parse_address(&wallet, user_address)
+                .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
             {
                 let user_state = wallet
                     .data
@@ -676,8 +715,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
         SubCommand::Transaction { tx_command } => {
             match tx_command {
                 TransactionCommand::Merge { user_address } => {
-                    let user_address =
-                        parse_address(&wallet, user_address).expect("user address was not given");
+                    let user_address = parse_address(&wallet, user_address)
+                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
 
                     {
                         let user_state = wallet
@@ -702,8 +741,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     amount,
                     is_nft,
                 } => {
-                    let user_address =
-                        parse_address(&wallet, user_address).expect("user address was not given");
+                    let user_address = parse_address(&wallet, user_address)
+                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
 
                     // let receiver_address = Address::from_str(&receiver_address).unwrap();
                     if user_address == receiver_address {
@@ -760,8 +799,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     csv_path,
                     // json
                 } => {
-                    let user_address =
-                        parse_address(&wallet, user_address).expect("user address was not given");
+                    let user_address = parse_address(&wallet, user_address)
+                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
 
                     let file =
                         File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -776,8 +815,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     csv_path,
                     // json
                 } => {
-                    let user_address =
-                        parse_address(&wallet, user_address).expect("user address was not given");
+                    let user_address = parse_address(&wallet, user_address)
+                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
 
                     let file =
                         File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -796,8 +835,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // }
             BlockCommand::Sign { user_address } => {
                 println!("block sign");
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
+                let user_address = parse_address(&wallet, user_address)
+                    .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
                 let user_state = wallet
                     .data
                     .get_mut(&user_address)
