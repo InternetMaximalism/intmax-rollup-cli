@@ -162,8 +162,6 @@ impl Config {
             .json::<ResponseAccountRegisterBody>()
             .expect("fail to parse JSON");
 
-        println!("register successfully");
-
         resp.address
     }
 

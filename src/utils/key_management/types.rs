@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 use intmax_zkp_core::{
     sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
@@ -92,12 +95,14 @@ pub trait Wallet {
     /// e.g., a pair of secret key and public key
     type Account;
 
+    type Error: 'static + Debug + Sync + Send;
+
     /// Initialize the wallet with seed.
     fn new(seed: Self::Seed) -> Self;
 
     /// Store a account in a wallet.
     /// Panic if the address of the account was already used.
-    fn add_account(&mut self, account: Self::Account);
+    fn add_account(&mut self, account: Self::Account) -> Result<(), Self::Error>;
 
     // fn remove_account(&mut self, address: Address<GoldilocksField>);
 

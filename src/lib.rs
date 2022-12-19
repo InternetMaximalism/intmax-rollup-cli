@@ -47,7 +47,7 @@ mod tests {
 
         let sender2_account = Account::<F>::rand();
 
-        wallet.add_account(sender1_account);
+        wallet.add_account(sender1_account).unwrap();
 
         // dbg!(&purge_proof_circuit_data.common);
 

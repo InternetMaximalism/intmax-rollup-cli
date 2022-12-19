@@ -184,6 +184,7 @@ impl Serialize for WalletOnMemory {
 impl Wallet for WalletOnMemory {
     type Seed = String;
     type Account = Account<F>;
+    type Error = anyhow::Error;
 
     fn new(_password: String) -> Self {
         Self {
@@ -192,7 +193,7 @@ impl Wallet for WalletOnMemory {
         }
     }
 
-    fn add_account(&mut self, account: Account<F>) {
+    fn add_account(&mut self, account: Account<F>) -> anyhow::Result<()> {
         let asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataMemory::default());
         let old_account = self.data.insert(
             account.address,
@@ -205,7 +206,11 @@ impl Wallet for WalletOnMemory {
                 sent_transactions: Default::default(),
             },
         );
-        assert!(old_account.is_none(), "designated address was already used");
+        if old_account.is_some() {
+            anyhow::bail!("designated address was already used");
+        }
+
+        Ok(())
     }
 
     fn set_default_account(&mut self, address: Option<Address<F>>) {

@@ -25,12 +25,34 @@ Add default account with private key
 intmax account add --default --private-key 0x1234
 ```
 
+#### success response
+
+```
+new account added: 0x30cc462351a42c905ad6e846d939e1afb8677735480459975965dc8bb23570ad
+set above account as default
+```
+
+<!-- #### failure response
+
+```
+Error: designated address was already used
+``` -->
+
 ## Display accounts
 
 You can check the account list.
 
 ```sh
 intmax account list
+```
+
+### Example
+
+#### success response
+
+```
+0x30cc462351a42c905ad6e846d939e1afb8677735480459975965dc8bb23570ad (default)
+0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 ```
 
 ## Change default account
@@ -47,6 +69,22 @@ intmax account set-default [user-address]
 intmax account set-default 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
 ```
 
+#### success response
+
+```
+set default account: 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
+```
+
+<!-- #### failure response
+
+```
+Error: given account does not exist in your wallet
+```
+
+```
+error: Invalid value for '<user-address>': bad hexadecimal sequence size
+``` -->
+
 ## Export private key
 
 You can export your private key to a specified file.
@@ -60,6 +98,18 @@ intmax account export -f <file-path>
 ```sh
 intmax account export -f ~/Documents/my-account
 ```
+
+#### success response
+
+```
+Done!
+```
+
+<!-- #### failure response
+
+```
+Error: file was not found
+``` -->
 
 ## Mint token
 
@@ -84,6 +134,26 @@ You can issue NFT. The token id can be selected from 0x01 to 0xff.
 ```
 intmax deposit --nft -i 0x01
 ```
+
+#### success response
+
+```
+deposit successfully
+```
+
+<!-- #### failure response
+
+```
+Error: you cannot omit --token-id attribute with --nft flag
+```
+
+```
+Error: you cannot omit --amount attribute without --nft flag
+```
+
+```
+Error: it is recommended that the NFT token ID be something other than 0x00
+``` -->
 
 ## Send token
 
@@ -110,12 +180,64 @@ Send your NFT (token ID is 0x01) to address `0x714bdc6f38947e6da5ee9596c50b2e06e
 intmax tx send --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d --nft -i 0x01
 ```
 
+#### success response
+
+```
+WARNING: DO NOT interrupt execution of this program while a transaction is being sent.
+start proving: user_tx_proof
+prove: 2.886 sec
+transaction hash is 0x2d5b0466183df693bbad9660b687e8d51e163b19ebde11fc5ded24e5a33d5584
+broadcast transaction successfully
+start proving: received_signature
+prove: 0.004 sec
+send received signature successfully
+```
+
+<!--
+#### failure response
+
+```
+Error: output asset amount is too much
+```
+
+```
+Error: you cannot omit --token-id attribute with --nft flag
+```
+
+```
+Error: you cannot omit --amount attribute without --nft flag
+```
+
+```
+Error: it is recommended that the NFT token ID be something other than 0x00
+``` -->
+
 ## Display assets
 
 Displays all currently owned assets.
 
 ```sh
 intmax assets
+```
+
+### Example
+
+#### success response
+
+```
+User: 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
+--------------------------------------------------------------------------------------
+  No assets held
+--------------------------------------------------------------------------------------
+```
+
+```
+User: 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
+--------------------------------------------------------------------------------------
+  Token Address | 0x3d4dcb332de1452f4f3de0612cb1c8a3ac892701f3e23627a634f2d962dc0712
+  Token ID      | 0x01
+  Amount        | 1
+--------------------------------------------------------------------------------------
 ```
 
 ## Bulk-mint
@@ -133,6 +255,20 @@ intmax tx bulk-mint -f <file-path>
 intmax tx bulk-mint -f ./tests/airdrop/example2.csv
 ```
 
+#### success response
+
+```
+deposit successfully
+WARNING: DO NOT interrupt execution of this program while a transaction is being sent.
+start proving: user_tx_proof
+prove: 2.861 sec
+transaction hash is 0xb71cf8dcd05da384dcba305ae5055a1ae0072572683be6dd11d7e5d74e2eb091
+no purging transaction given
+start proving: received_signature
+prove: 0.003 sec
+send received signature successfully
+```
+
 ## Bulk-transfer
 
 You can transfer owned tokens according to the contents of the file. Up to 8 tokens can be sent together.
@@ -147,3 +283,22 @@ intmax tx bulk-transfer -f <file-path>
 ```sh
 intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
 ```
+
+#### success response
+
+```
+WARNING: DO NOT interrupt execution of this program while a transaction is being sent.
+start proving: user_tx_proof
+prove: 2.821 sec
+transaction hash is 0x94039632d3af99ef06d750509d6153d1958720ead3f1dbd98f987059eea4eb5d
+broadcast transaction successfully
+start proving: received_signature
+prove: 0.006 sec
+send received signature successfully
+```
+
+<!-- #### failure response
+
+```
+Error: output asset amount is too much
+``` -->

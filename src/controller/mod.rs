@@ -521,21 +521,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .unwrap_or_else(WrappedHashOut::rand);
                 let account = Account::new(*private_key);
                 service.register_account(account.public_key);
-                wallet.add_account(account);
-
-                // NOTICE: account 作成前に token を受け取ることもできるので,
-                // 最初のブロックから同期する必要がある.
-                // let user_state = wallet
-                //     .data
-                //     .get_mut(&account.address)
-                //     .expect("user address was not found in wallet");
-                //
-                // let latest_block = service
-                //     .get_latest_block()
-                //     .expect("fail to fetch latest block");
-                // // dbg!(latest_block.header.block_number);
-                // let last_seen_block_number = latest_block.header.block_number;
-                // user_state.last_seen_block_number = last_seen_block_number;
+                wallet.add_account(account)?;
 
                 println!("new account added: {}", account.address);
 
@@ -576,7 +562,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                         wallet.set_default_account(Some(user_address));
                         println!("set default account: {}", user_address);
                     } else {
-                        println!("given account does not exist in your wallet");
+                        anyhow::bail!("given account does not exist in your wallet");
                     }
                 } else {
                     wallet.set_default_account(None);
@@ -603,6 +589,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     .map_err(|_| anyhow::anyhow!("file was not found"))?;
                 let account = user_state.account;
                 write!(file, "{}", serde_json::to_string(&account)?)?;
+
+                println!("Done!");
             }
             AccountCommand::PossessionProof { .. } => {
                 anyhow::bail!("This is a upcoming feature.");
