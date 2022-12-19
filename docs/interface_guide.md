@@ -71,10 +71,18 @@ intmax deposit -i <token-id> --amount <amount>
 
 ### Example
 
-Deposit your token (the token address is the same with your user address, the token id can be selected from 0x00 to 0xff and amount is an integer less than 2^56)
+Deposit your fungible token (the token address is the same with your user address and amount is an integer less than 2^56).
 
 ```
-intmax deposit -i 0x00 --amount 10
+intmax deposit --amount 1000000
+```
+
+### Example
+
+You can issue NFT. The token id can be selected from 0x01 to 0xff.
+
+```
+intmax deposit --nft -i 0x01
 ```
 
 ## Send token
@@ -88,8 +96,18 @@ intmax tx send --receiver-address <receiver-address> [-a <token-address>] -i <to
 
 ### Example
 
+Send your 1000000 fungible token to address `0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d`.
+
 ```
-intmax tx send --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d -i 0x00 --amount 10
+intmax tx send --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d --amount 1000000
+```
+
+### Example
+
+Send your NFT (token ID is 0x01) to address `0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d`.
+
+```
+intmax tx send --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d --nft -i 0x01
 ```
 
 ## Display assets

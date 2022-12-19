@@ -149,10 +149,13 @@ enum TransactionCommand {
         contract_address: Option<Address<F>>,
         /// the token id can be selected from 0x00 to 0xff
         #[structopt(long = "token-id", short = "i")]
-        token_id: VariableIndex<F>,
+        token_id: Option<VariableIndex<F>>,
         /// `amount` must be a positive integer less than 2^56.
         #[structopt(long, short = "q")]
-        amount: u64,
+        amount: Option<u64>,
+        /// Send NFT (an alias of `--amount 1`)
+        #[structopt(long = "nft")]
+        is_nft: bool,
     },
     /// [advanced command] Merge received your token.
     /// This is usually performed automatically before you send the transaction.
@@ -582,6 +585,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // receiver_address と同じ contract_address をもつトークンしか mint できない
             let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
             let variable_index = if let Some(variable_index) = variable_index {
+                if is_nft && variable_index == 0u8.into() {
+                    anyhow::bail!(
+                        "it is recommended that the NFT token ID be something other than 0x00"
+                    );
+                }
+
                 variable_index
             } else {
                 if is_nft {
@@ -664,95 +673,123 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 serde_json::to_string(&user_state.assets).unwrap()
             );
         }
-        SubCommand::Transaction { tx_command } => match tx_command {
-            TransactionCommand::Merge { user_address } => {
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
+        SubCommand::Transaction { tx_command } => {
+            match tx_command {
+                TransactionCommand::Merge { user_address } => {
+                    let user_address =
+                        parse_address(&wallet, user_address).expect("user address was not given");
 
-                {
-                    let user_state = wallet
-                        .data
-                        .get_mut(&user_address)
-                        .expect("user address was not found in wallet");
+                    {
+                        let user_state = wallet
+                            .data
+                            .get_mut(&user_address)
+                            .expect("user address was not found in wallet");
 
-                    service.sync_sent_transaction(user_state, user_address);
+                        service.sync_sent_transaction(user_state, user_address);
 
-                    backup_wallet(&wallet)?;
+                        backup_wallet(&wallet)?;
+                    }
+
+                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                    merge(&mut wallet, user_address, 0)?;
                 }
-
-                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                merge(&mut wallet, user_address, 0)?;
-            }
-            TransactionCommand::Send {
-                user_address,
-                receiver_address,
-                contract_address,
-                token_id: variable_index,
-                amount,
-            } => {
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
-
-                // let receiver_address = Address::from_str(&receiver_address).unwrap();
-                if user_address == receiver_address {
-                    anyhow::bail!("cannot send asset to myself");
-                }
-
-                if amount == 0 || amount >= 1u64 << 56 {
-                    anyhow::bail!("`amount` must be a positive integer less than 2^56");
-                }
-
-                // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-                let output_asset = ContributedAsset {
+                TransactionCommand::Send {
+                    user_address,
                     receiver_address,
-                    kind: TokenKind {
-                        contract_address: contract_address
-                            // .map(|v| Address::from_str(&v).unwrap())
-                            .unwrap_or(user_address),
-                        variable_index,
-                    },
+                    contract_address,
+                    token_id: variable_index,
                     amount,
-                };
+                    is_nft,
+                } => {
+                    let user_address =
+                        parse_address(&wallet, user_address).expect("user address was not given");
 
-                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+                    // let receiver_address = Address::from_str(&receiver_address).unwrap();
+                    if user_address == receiver_address {
+                        anyhow::bail!("cannot send asset to myself");
+                    }
 
-                transfer(&mut wallet, user_address, &[output_asset])?;
+                    let variable_index = if let Some(variable_index) = variable_index {
+                        if is_nft && variable_index == 0u8.into() {
+                            anyhow::bail!("it is recommended that the NFT token ID be something other than 0x00");
+                        }
+
+                        variable_index
+                    } else {
+                        if is_nft {
+                            anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
+                        }
+
+                        0u8.into()
+                    };
+                    let amount = if let Some(amount) = amount {
+                        if is_nft {
+                            println!("--nft flag was ignored because of --amount attribute");
+                        }
+
+                        amount
+                    } else if is_nft {
+                        1
+                    } else {
+                        anyhow::bail!("you cannot omit --amount attribute without --nft flag");
+                    };
+
+                    if amount == 0 || amount >= 1u64 << 56 {
+                        anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                    }
+
+                    // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                    let output_asset = ContributedAsset {
+                        receiver_address,
+                        kind: TokenKind {
+                            contract_address: contract_address
+                                // .map(|v| Address::from_str(&v).unwrap())
+                                .unwrap_or(user_address),
+                            variable_index,
+                        },
+                        amount,
+                    };
+
+                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                    transfer(&mut wallet, user_address, &[output_asset])?;
+                }
+                TransactionCommand::BulkMint {
+                    user_address,
+                    csv_path,
+                    // json
+                } => {
+                    let user_address =
+                        parse_address(&wallet, user_address).expect("user address was not given");
+
+                    let file =
+                        File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
+                    let json = read_distribution_from_csv(user_address, file)?;
+
+                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                    bulk_mint(&mut wallet, user_address, json, true)?;
+                }
+                TransactionCommand::BulkTransfer {
+                    user_address,
+                    csv_path,
+                    // json
+                } => {
+                    let user_address =
+                        parse_address(&wallet, user_address).expect("user address was not given");
+
+                    let file =
+                        File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
+                    let json = read_distribution_from_csv(user_address, file)?;
+
+                    bulk_mint(&mut wallet, user_address, json, false)?;
+                }
+                TransactionCommand::Swap { .. } => {
+                    anyhow::bail!("This is a upcoming feature.");
+                }
             }
-            TransactionCommand::BulkMint {
-                user_address,
-                csv_path,
-                // json
-            } => {
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
-
-                let file =
-                    File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
-                let json = read_distribution_from_csv(user_address, file)?;
-
-                ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                bulk_mint(&mut wallet, user_address, json, true)?;
-            }
-            TransactionCommand::BulkTransfer {
-                user_address,
-                csv_path,
-                // json
-            } => {
-                let user_address =
-                    parse_address(&wallet, user_address).expect("user address was not given");
-
-                let file =
-                    File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
-                let json = read_distribution_from_csv(user_address, file)?;
-
-                bulk_mint(&mut wallet, user_address, json, false)?;
-            }
-            TransactionCommand::Swap { .. } => {
-                anyhow::bail!("This is a upcoming feature.");
-            }
-        },
+        }
         SubCommand::Block { block_command } => match block_command {
             // BlockCommand::Propose {} => {
             //     service.trigger_propose_block();
