@@ -8,6 +8,7 @@ use intmax_zkp_core::{
     transaction::asset::TokenKind,
     zkdsa::account::Address,
 };
+use num_bigint::BigUint;
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
 use serde::{Deserialize, Serialize};
 
@@ -73,13 +74,14 @@ impl<F: RichField> Assets<F> {
 
     /// 各 token kind について所持している金額を算出する.
     /// NOTICE: Assets は token を受け取った transaction ごとにバラバラに管理されている.
-    pub fn calc_total_amount(&self) -> HashMap<TokenKind<F>, u64> {
+    pub fn calc_total_amount(&self) -> HashMap<TokenKind<F>, BigUint> {
         let mut total_amount_map = HashMap::new();
         for asset in self.0.iter() {
             if let Some(amount_list) = total_amount_map.get_mut(&asset.0) {
                 *amount_list += asset.1;
             } else {
-                total_amount_map.insert(asset.0, asset.1);
+                let amount = BigUint::from(asset.1);
+                total_amount_map.insert(asset.0, amount);
             }
         }
 
