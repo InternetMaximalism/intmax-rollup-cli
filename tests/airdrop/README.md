@@ -2,6 +2,8 @@
 
 Writing CSV allows you to transfer tokens together.
 
+NOTICE: Account nicknames cannot be used in the CSV file.
+
 ## Sending (fungible) token
 
 ```csv

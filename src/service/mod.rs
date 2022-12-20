@@ -867,6 +867,7 @@ impl Config {
     pub fn verify_block(&self, block_number: Option<u32>) -> anyhow::Result<()> {
         let latest_block = self.get_latest_block().unwrap();
         let block_number = block_number.unwrap_or(latest_block.header.block_number);
+        println!("block number: {block_number}");
         let block_details = self.get_block_details(block_number).unwrap();
 
         let config = CircuitConfig::standard_recursion_config();
@@ -1213,6 +1214,38 @@ impl Config {
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
         Ok((resp.proofs, latest_block_number))
+    }
+
+    pub fn get_possession_proof(
+        &self,
+        user_address: Address<F>,
+    ) -> anyhow::Result<SmtInclusionProof<F>> {
+        let query = vec![
+            ("user_address", format!("{}", user_address)),
+            ("world_state_digest", format!("{}", user_address)),
+        ];
+        let api_path = "/account/user-asset-proof";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("request {api_path}");
+            Instant::now()
+        };
+        let request = reqwest::blocking::Client::new()
+            .get(self.aggregator_api_url(api_path))
+            .query(&query);
+        let resp = request.send()?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
+        if resp.status() != 200 {
+            anyhow::bail!("{}", resp.text().unwrap());
+        }
+
+        let resp = resp.json::<ResponseUserAssetProofBody>()?;
+
+        Ok(resp.proof)
     }
 }
 
