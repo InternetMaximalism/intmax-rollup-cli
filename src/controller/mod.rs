@@ -536,7 +536,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 service.trigger_approve_block();
             }
             AccountCommand::List {} => {
-                let account_list = wallet.data.keys();
+                let mut account_list = wallet.data.keys().collect::<Vec<_>>();
+                account_list.sort_by_key(|v| v.to_string());
 
                 let mut is_empty = true;
                 for address in account_list {
@@ -686,9 +687,9 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 println!("  No assets held");
                 println!("{}", separator);
             } else {
-                for (kind, total_amount) in total_amount_map {
-                    println!("  Token Address | {}", kind.contract_address);
-                    println!("  Token ID      | {}", kind.variable_index);
+                for ((contract_address, variable_index), total_amount) in total_amount_map {
+                    println!("  Token Address | {}", contract_address);
+                    println!("  Token ID      | {}", variable_index);
                     println!("  Amount        | {}", total_amount);
                     println!("{}", separator);
                 }

@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
 };
 
@@ -74,14 +74,20 @@ impl<F: RichField> Assets<F> {
 
     /// 各 token kind について所持している金額を算出する.
     /// NOTICE: Assets は token を受け取った transaction ごとにバラバラに管理されている.
-    pub fn calc_total_amount(&self) -> HashMap<TokenKind<F>, BigUint> {
-        let mut total_amount_map = HashMap::new();
+    pub fn calc_total_amount(&self) -> BTreeMap<(String, String), BigUint> {
+        let mut total_amount_map = BTreeMap::new();
         for asset in self.0.iter() {
-            if let Some(amount_list) = total_amount_map.get_mut(&asset.0) {
+            let encoded_contract_address = asset.0.contract_address.to_string();
+            let encoded_variable_index = asset.0.variable_index.to_string();
+            let encoded_token_kind = (encoded_contract_address, encoded_variable_index);
+            if let Some(amount_list) = total_amount_map.get_mut(&encoded_token_kind) {
                 *amount_list += asset.1;
             } else {
+                let encoded_contract_address = asset.0.contract_address.to_string();
+                let encoded_variable_index = asset.0.variable_index.to_string();
+                let encoded_token_kind = (encoded_contract_address, encoded_variable_index);
                 let amount = BigUint::from(asset.1);
-                total_amount_map.insert(asset.0, amount);
+                total_amount_map.insert(encoded_token_kind, amount);
             }
         }
 
