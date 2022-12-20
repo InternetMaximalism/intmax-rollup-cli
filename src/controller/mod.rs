@@ -3,6 +3,7 @@ use std::{
     fs::{create_dir, File, OpenOptions},
     io::{Read, Write},
     path::PathBuf,
+    str::FromStr,
 };
 
 use intmax_rollup_interface::constants::*;
@@ -143,7 +144,7 @@ enum TransactionCommand {
         user_address: Option<Address<F>>,
         /// destination of a token
         #[structopt(long, short = "r")]
-        receiver_address: Address<F>,
+        receiver_address: String,
         /// token address
         #[structopt(long = "token-address", short = "a")]
         contract_address: Option<Address<F>>,
@@ -732,7 +733,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     let user_address = parse_address(&wallet, user_address)
                         .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
 
-                    // let receiver_address = Address::from_str(&receiver_address).unwrap();
+                    if receiver_address.len() != 66 {
+                        anyhow::bail!("recipient must be 32 bytes hex string with 0x-prefix");
+                    }
+                    let receiver_address = Address::from_str(&receiver_address)?;
                     if user_address == receiver_address {
                         anyhow::bail!("cannot send asset to myself");
                     }
