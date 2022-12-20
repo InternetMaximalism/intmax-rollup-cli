@@ -18,7 +18,10 @@ use structopt::StructOpt;
 
 use crate::{
     service::*,
-    utils::key_management::{memory::WalletOnMemory, types::Wallet},
+    utils::{
+        key_management::{memory::WalletOnMemory, types::Wallet},
+        nickname::NicknameTable,
+    },
 };
 
 const D: usize = 2;
@@ -52,7 +55,7 @@ enum SubCommand {
     #[structopt(name = "deposit")]
     Deposit {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
 
         /// `token-id` can be selected from 0x00 to 0xff. [default: 0x00]
         #[structopt(long = "token-id", short = "i")]
@@ -70,7 +73,7 @@ enum SubCommand {
     #[structopt(name = "assets")]
     Assets {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
     },
     /// commands for transactions
     #[structopt(name = "tx")]
@@ -108,6 +111,10 @@ enum AccountCommand {
         #[structopt(long)]
         private_key: Option<WrappedHashOut<F>>,
 
+        /// Add nickname
+        #[structopt(long)]
+        nickname: Option<String>,
+
         /// Set as default account.
         #[structopt(long = "default")]
         is_default: bool,
@@ -119,20 +126,39 @@ enum AccountCommand {
     #[structopt(name = "set-default")]
     SetDefault {
         /// default user address
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
     },
     /// Export your default account to the specified file.
     Export {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
 
         /// exported file path
         #[structopt(long = "file", short = "f")]
         file_path: PathBuf,
     },
+    /// commands for account nicknames.
+    #[structopt(name = "nickname")]
+    Nickname {
+        #[structopt(subcommand)]
+        nickname_command: NicknameCommand,
+    },
     /// [upcoming features] Output the possession proof of your assets.
     #[structopt(name = "possession-proof")]
     PossessionProof {},
+}
+
+#[derive(Debug, StructOpt)]
+enum NicknameCommand {
+    /// Give your account a nickname.
+    #[structopt(name = "set")]
+    Set { address: String, nickname: String },
+    /// Remove specified nicknames. The assets held in the account are not lost.
+    #[structopt(name = "remove")]
+    Remove { nicknames: Vec<String> },
+    /// Display nicknames.
+    #[structopt(name = "list")]
+    List {},
 }
 
 #[derive(Debug, StructOpt)]
@@ -141,13 +167,13 @@ enum TransactionCommand {
     #[structopt(name = "send")]
     Send {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
         /// destination of a token
         #[structopt(long, short = "r")]
         receiver_address: String,
         /// token address
         #[structopt(long = "token-address", short = "a")]
-        contract_address: Option<Address<F>>,
+        contract_address: Option<String>,
         /// the token id can be selected from 0x00 to 0xff
         #[structopt(long = "token-id", short = "i")]
         token_id: Option<VariableIndex<F>>,
@@ -164,16 +190,16 @@ enum TransactionCommand {
     #[structopt(name = "merge")]
     Merge {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
     },
     /// You can issue new token according to the contents of the file.
     /// Up to 16 tokens can be sent together.
     ///
-    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv .
+    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/README.md .
     #[structopt(name = "bulk-mint")]
     BulkMint {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
 
         /// CSV file path
         #[structopt(long = "file", short = "f")]
@@ -184,11 +210,11 @@ enum TransactionCommand {
     /// You can transfer owned tokens according to the contents of the file.
     /// Up to 8 tokens can be sent together.
     ///
-    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/example.csv .
+    /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/README.md .
     #[structopt(name = "bulk-transfer")]
     BulkTransfer {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
 
         /// CSV file path
         #[structopt(long = "file", short = "f")]
@@ -213,7 +239,7 @@ enum BlockCommand {
     #[structopt(name = "sign")]
     Sign {
         #[structopt(long)]
-        user_address: Option<Address<F>>,
+        user_address: Option<String>,
     },
     // /// Trigger to approve a block.
     // #[structopt(name = "approve")]
@@ -224,19 +250,6 @@ enum BlockCommand {
         #[structopt(long, short = "n")]
         block_number: Option<u32>,
     },
-}
-
-pub fn parse_address<W: Wallet>(
-    wallet: &W,
-    user_address: Option<Address<F>>,
-) -> anyhow::Result<Address<F>> {
-    if let Some(user_address) = user_address {
-        Ok(user_address)
-    } else if let Some(user_address) = wallet.get_default_account() {
-        Ok(user_address)
-    } else {
-        Err(anyhow::anyhow!("user address was not given"))
-    }
 }
 
 pub fn get_input(prompt: &str) -> String {
@@ -278,6 +291,18 @@ pub fn invoke_command() -> anyhow::Result<()> {
         .to_string();
     assert!(!aggregator_url.is_empty());
     wallet_dir_path.push(aggregator_url);
+
+    let mut nickname_file_path = wallet_dir_path.clone();
+    nickname_file_path.push("nickname");
+
+    let mut nickname_table = if let Ok(mut file) = File::open(nickname_file_path.clone()) {
+        let mut encoded_nickname_table = String::new();
+        file.read_to_string(&mut encoded_nickname_table)?;
+        serde_json::from_str(&encoded_nickname_table).unwrap()
+    } else {
+        NicknameTable::default()
+    };
+
     let mut wallet_file_path = wallet_dir_path.clone();
     wallet_file_path.push("wallet");
 
@@ -336,6 +361,49 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             wallet
         }
+    };
+
+    let parse_address = |wallet: &WalletOnMemory,
+                         //  nickname_table: &NicknameTable,
+                         user_address: Option<String>|
+     -> anyhow::Result<Address<F>> {
+        if let Some(user_address) = user_address {
+            let user_address = if user_address.is_empty() {
+                anyhow::bail!("empty user address");
+            } else if user_address.starts_with("0x") {
+                Address::from_str(&user_address)?
+            } else if let Some(user_address) = nickname_table.nickname_to_address.get(&user_address)
+            {
+                *user_address
+            } else {
+                anyhow::bail!("unregistered nickname");
+            };
+
+            Ok(user_address)
+        } else if let Some(user_address) = wallet.get_default_account() {
+            Ok(user_address)
+        } else {
+            anyhow::bail!("--user-address was not given");
+        }
+    };
+
+    let set_nickname = |nickname_table: &mut NicknameTable,
+                        address: Address<F>,
+                        nickname: String|
+     -> anyhow::Result<()> {
+        if nickname.starts_with("0x") {
+            anyhow::bail!("nickname must not start with 0x");
+        }
+
+        nickname_table.insert(address, nickname)?;
+
+        let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
+        std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+        let mut file = File::create(nickname_file_path.clone())?;
+        write!(file, "{}", encoded_nickname_table)?;
+        file.flush()?;
+
+        Ok(())
     };
 
     // マージしていない差分が残り `num_unmerged` 個以下になるまでマージ処理を繰り返す.
@@ -515,6 +583,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             AccountCommand::Reset {} => {}
             AccountCommand::Add {
                 private_key,
+                nickname,
                 is_default,
             } => {
                 let private_key = private_key
@@ -528,10 +597,15 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 if is_default {
                     wallet.set_default_account(Some(account.address));
-                    println!("set above account as default");
+                    println!("set the above account as default");
                 }
 
                 backup_wallet(&wallet)?;
+
+                if let Some(nickname) = nickname {
+                    set_nickname(&mut nickname_table, account.address, nickname.clone())?;
+                    println!("the above account appears replaced by {nickname}");
+                }
 
                 service.trigger_propose_block();
                 service.trigger_approve_block();
@@ -545,9 +619,15 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     is_empty = false;
 
                     if Some(*address) == wallet.get_default_account() {
-                        println!("{} (default)", address);
+                        if let Some(nickname) = nickname_table.address_to_nickname.get(address) {
+                            println!("{address} [{nickname}] (default)",);
+                        } else {
+                            println!("{address} (default)");
+                        }
+                    } else if let Some(nickname) = nickname_table.address_to_nickname.get(address) {
+                        println!("{address} [{nickname}]",);
                     } else {
-                        println!("{}", address);
+                        println!("{address}");
                     }
                 }
 
@@ -560,6 +640,18 @@ pub fn invoke_command() -> anyhow::Result<()> {
             AccountCommand::SetDefault { user_address } => {
                 let account_list = wallet.data.keys().cloned().collect::<Vec<_>>();
                 if let Some(user_address) = user_address {
+                    let user_address = if user_address.is_empty() {
+                        anyhow::bail!("empty user address");
+                    } else if user_address.starts_with("0x") {
+                        Address::from_str(&user_address)?
+                    } else if let Some(user_address) =
+                        nickname_table.nickname_to_address.get(&user_address)
+                    {
+                        *user_address
+                    } else {
+                        anyhow::bail!("unregistered nickname");
+                    };
+
                     if account_list.iter().any(|v| v == &user_address) {
                         wallet.set_default_account(Some(user_address));
                         println!("set default account: {}", user_address);
@@ -577,8 +669,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 user_address,
                 file_path,
             } => {
-                let user_address = parse_address(&wallet, user_address)
-                    .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                let user_address = parse_address(&wallet, user_address)?;
                 let user_state = wallet
                     .data
                     .get(&user_address)
@@ -594,6 +685,36 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 println!("Done!");
             }
+            AccountCommand::Nickname { nickname_command } => match nickname_command {
+                NicknameCommand::Set { address, nickname } => {
+                    if address.len() != 66 {
+                        anyhow::bail!("address must be 32 bytes hex string with 0x-prefix");
+                    }
+                    let address = Address::from_str(&address)?;
+
+                    set_nickname(&mut nickname_table, address, nickname)?;
+
+                    println!("Done!");
+                }
+                NicknameCommand::Remove { nicknames } => {
+                    for nickname in nicknames {
+                        nickname_table.remove(nickname)?;
+                    }
+
+                    let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
+                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+                    let mut file = File::create(nickname_file_path)?;
+                    write!(file, "{}", encoded_nickname_table)?;
+                    file.flush()?;
+
+                    println!("Done!");
+                }
+                NicknameCommand::List {} => {
+                    for (nickname, address) in nickname_table.nickname_to_address {
+                        println!("{nickname} = {address}");
+                    }
+                }
+            },
             AccountCommand::PossessionProof { .. } => {
                 anyhow::bail!("This is a upcoming feature.");
             }
@@ -604,8 +725,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             amount,
             is_nft,
         } => {
-            let user_address = parse_address(&wallet, user_address)
-                .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+            let user_address = parse_address(&wallet, user_address)?;
             let _user_state = wallet
                 .data
                 .get(&user_address)
@@ -658,8 +778,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             user_address,
             // verbose,
         } => {
-            let user_address = parse_address(&wallet, user_address)
-                .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+            let user_address = parse_address(&wallet, user_address)?;
             {
                 let user_state = wallet
                     .data
@@ -689,6 +808,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 println!("{}", separator);
             } else {
                 for ((contract_address, variable_index), total_amount) in total_amount_map {
+                    let decoded_contract_address = Address::from_str(&contract_address).unwrap();
+                    let contract_address = nickname_table
+                        .address_to_nickname
+                        .get(&decoded_contract_address)
+                        // .map(|nickname| format!("{nickname} ({contract_address})"))
+                        .unwrap_or(&contract_address);
                     println!("  Token Address | {}", contract_address);
                     println!("  Token ID      | {}", variable_index);
                     println!("  Amount        | {}", total_amount);
@@ -705,8 +830,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
         SubCommand::Transaction { tx_command } => {
             match tx_command {
                 TransactionCommand::Merge { user_address } => {
-                    let user_address = parse_address(&wallet, user_address)
-                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                    let user_address = parse_address(&wallet, user_address)?;
 
                     {
                         let user_state = wallet
@@ -731,13 +855,44 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     amount,
                     is_nft,
                 } => {
-                    let user_address = parse_address(&wallet, user_address)
-                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                    let user_address = parse_address(&wallet, user_address)?;
 
-                    if receiver_address.len() != 66 {
-                        anyhow::bail!("recipient must be 32 bytes hex string with 0x-prefix");
+                    let receiver_address = if receiver_address.is_empty() {
+                        anyhow::bail!("empty recipient");
+                    } else if receiver_address.starts_with("0x") {
+                        if receiver_address.len() != 66 {
+                            anyhow::bail!("recipient must be 32 bytes hex string with 0x-prefix");
+                        }
+
+                        Address::from_str(&receiver_address)?
+                    } else if let Some(receiver_address) =
+                        nickname_table.nickname_to_address.get(&receiver_address)
+                    {
+                        *receiver_address
+                    } else {
+                        anyhow::bail!("unregistered nickname: recipient");
+                    };
+
+                    if user_address == receiver_address {
+                        anyhow::bail!("cannot send asset to myself");
                     }
-                    let receiver_address = Address::from_str(&receiver_address)?;
+
+                    let contract_address = if let Some(contract_address) = contract_address {
+                        if contract_address.is_empty() {
+                            anyhow::bail!("empty token address");
+                        } else if contract_address.starts_with("0x") {
+                            Address::from_str(&contract_address)?
+                        } else if let Some(contract_address) =
+                            nickname_table.nickname_to_address.get(&contract_address)
+                        {
+                            *contract_address
+                        } else {
+                            anyhow::bail!("unregistered nickname: token address");
+                        }
+                    } else {
+                        user_address
+                    };
+
                     if user_address == receiver_address {
                         anyhow::bail!("cannot send asset to myself");
                     }
@@ -775,13 +930,13 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     let output_asset = ContributedAsset {
                         receiver_address,
                         kind: TokenKind {
-                            contract_address: contract_address
-                                // .map(|v| Address::from_str(&v).unwrap())
-                                .unwrap_or(user_address),
+                            contract_address,
                             variable_index,
                         },
                         amount,
                     };
+                    #[cfg(feature = "verbose")]
+                    dbg!(serde_json::to_string(&output_asset).unwrap());
 
                     ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
@@ -792,8 +947,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     csv_path,
                     // json
                 } => {
-                    let user_address = parse_address(&wallet, user_address)
-                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                    let user_address = parse_address(&wallet, user_address)?;
 
                     let file =
                         File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -808,8 +962,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
                     csv_path,
                     // json
                 } => {
-                    let user_address = parse_address(&wallet, user_address)
-                        .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                    let user_address = parse_address(&wallet, user_address)?;
 
                     let file =
                         File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -828,8 +981,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             // }
             BlockCommand::Sign { user_address } => {
                 println!("block sign");
-                let user_address = parse_address(&wallet, user_address)
-                    .map_err(|_| anyhow::anyhow!("--user-address was not given"))?;
+                let user_address = parse_address(&wallet, user_address)?;
                 let user_state = wallet
                     .data
                     .get_mut(&user_address)
