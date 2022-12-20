@@ -10,6 +10,7 @@ dirs = "4.0"
 hex = "0.4"
 intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "8714485ea361dc7efc0b0b76eacd27bcda37374c" }
 intmax-zkp-core = { git = "https://github.com/InternetMaximalism/intmax-zkp-core", rev = "f3f1e9cbb04928c5628ec679a29c7efdc1adec2d" }
+num-bigint = "0.4"
 plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
 regex = "1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }

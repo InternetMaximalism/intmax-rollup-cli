@@ -527,6 +527,7 @@ dependencies = [
  "hex",
  "intmax-rollup-interface",
  "intmax-zkp-core",
+ "num-bigint",
  "plonky2",
  "regex",
  "reqwest",
