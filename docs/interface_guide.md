@@ -85,32 +85,6 @@ Error: given account does not exist in your wallet
 error: Invalid value for '<user-address>': bad hexadecimal sequence size
 ``` -->
 
-## Export private key
-
-You can export your private key to a specified file.
-
-```
-intmax account export -f <file-path>
-```
-
-### Example
-
-```sh
-intmax account export -f ~/Documents/my-account
-```
-
-#### success response
-
-```
-Done!
-```
-
-<!-- #### failure response
-
-```
-Error: file was not found
-``` -->
-
 ## Mint token
 
 You can issue amount of tokens determined by a `token-id` with the same token address as your user address.
