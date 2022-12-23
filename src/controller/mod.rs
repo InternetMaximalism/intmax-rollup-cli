@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{create_dir, File, OpenOptions},
+    fs::{create_dir, File},
     io::{Read, Write},
     path::PathBuf,
     str::FromStr,
@@ -54,7 +54,7 @@ enum SubCommand {
     /// Mint your token with the same token address as your user address.
     #[structopt(name = "deposit")]
     Deposit {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
 
         /// `token-id` can be selected from 0x00 to 0xff. [default: 0x00]
@@ -72,7 +72,7 @@ enum SubCommand {
     /// Display your assets.
     #[structopt(name = "assets")]
     Assets {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
     },
     /// commands for transactions
@@ -128,15 +128,8 @@ enum AccountCommand {
         /// default user address
         user_address: Option<String>,
     },
-    /// Export your default account to the specified file.
-    Export {
-        #[structopt(long)]
-        user_address: Option<String>,
-
-        /// exported file path
-        #[structopt(long = "file", short = "f")]
-        file_path: PathBuf,
-    },
+    /// [deprecated features]
+    Export {},
     /// commands for account nicknames.
     #[structopt(name = "nickname")]
     Nickname {
@@ -166,7 +159,7 @@ enum TransactionCommand {
     /// Send your owned token to others.
     #[structopt(name = "send")]
     Send {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
         /// destination of a token
         #[structopt(long, short = "r")]
@@ -189,7 +182,7 @@ enum TransactionCommand {
     /// Tokens sent by others cannot be moved until this operation is performed.
     #[structopt(name = "merge")]
     Merge {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
     },
     /// You can issue new token according to the contents of the file.
@@ -198,7 +191,7 @@ enum TransactionCommand {
     /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/README.md .
     #[structopt(name = "bulk-mint")]
     BulkMint {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
 
         /// CSV file path
@@ -213,7 +206,7 @@ enum TransactionCommand {
     /// For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/README.md .
     #[structopt(name = "bulk-transfer")]
     BulkTransfer {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
 
         /// CSV file path
@@ -238,7 +231,7 @@ enum BlockCommand {
     /// the transaction is reverted.
     #[structopt(name = "sign")]
     Sign {
-        #[structopt(long)]
+        #[structopt(long, short = "u")]
         user_address: Option<String>,
     },
     // /// Trigger to approve a block.
@@ -665,25 +658,8 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
                 backup_wallet(&wallet)?;
             }
-            AccountCommand::Export {
-                user_address,
-                file_path,
-            } => {
-                let user_address = parse_address(&wallet, user_address)?;
-                let user_state = wallet
-                    .data
-                    .get(&user_address)
-                    .expect("user address was not found in wallet");
-
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .open(file_path)
-                    .map_err(|_| anyhow::anyhow!("file was not found"))?;
-                let account = user_state.account;
-                write!(file, "{}", serde_json::to_string(&account)?)?;
-
-                println!("Done!");
+            AccountCommand::Export { .. } => {
+                anyhow::bail!("This is a deprecated feature.");
             }
             AccountCommand::Nickname { nickname_command } => match nickname_command {
                 NicknameCommand::Set { address, nickname } => {
