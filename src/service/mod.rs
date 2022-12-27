@@ -8,7 +8,9 @@ use intmax_rollup_interface::{constants::*, interface::*};
 use intmax_zkp_core::{
     merkle_tree::tree::MerkleProof,
     rollup::{
-        block::BlockInfo, circuits::make_block_proof_circuit, gadgets::deposit_block::VariableIndex,
+        block::BlockInfo,
+        circuits::{make_block_proof_circuit, BlockDetail},
+        gadgets::deposit_block::VariableIndex,
     },
     sparse_merkle_tree::{
         gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
@@ -908,25 +910,27 @@ impl Config {
                     .unwrap()
             })
             .collect::<Vec<_>>();
-        let mut pw = PartialWitness::new();
-        block_circuit.targets.set_witness::<F, C>(
-            &mut pw,
-            block_number,
-            &block_details.user_tx_proofs,
-            &block_details.default_user_tx_proof,
-            &deposit_process_proofs,
-            &block_details.world_state_process_proofs,
-            &block_details.world_state_revert_proofs,
-            &block_details.received_signature_proofs,
-            &block_details.default_simple_signature_proof,
-            &block_details.latest_account_process_proofs,
-            &block_details.block_headers_proof_siblings,
-            block_details.prev_block_header,
-        );
 
+        let inputs = BlockDetail {
+            block_number: block_details.block_number,
+            user_tx_proofs: block_details.user_tx_proofs,
+            deposit_process_proofs,
+            world_state_process_proofs: block_details.world_state_process_proofs,
+            world_state_revert_proofs: block_details.world_state_revert_proofs,
+            received_signature_proofs: block_details.received_signature_proofs,
+            latest_account_process_proofs: block_details.latest_account_process_proofs,
+            block_headers_proof_siblings: block_details.block_headers_proof_siblings,
+            prev_block_header: block_details.prev_block_header,
+        };
         println!("start proving: block_proof");
         let start = Instant::now();
-        let block_proof = block_circuit.prove(pw).unwrap();
+        let block_proof = block_circuit
+            .set_witness_and_prove(
+                &inputs,
+                &block_details.default_user_tx_proof,
+                &block_details.default_simple_signature_proof,
+            )
+            .unwrap();
         let end = start.elapsed();
         println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 

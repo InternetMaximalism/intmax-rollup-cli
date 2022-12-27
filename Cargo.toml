@@ -8,8 +8,8 @@ anyhow = "1.0"
 ctrlc = "3.2"
 dirs = "4.0"
 hex = "0.4"
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "6360881260c65aaa666a40e784a135ea24d77430" }
-intmax-zkp-core = { git = "https://github.com/InternetMaximalism/intmax-zkp-core", rev = "ba1b6447e9e7a2cedb9f1792bb32997799a91053" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "b8efc00481b7a8a1cf035bab08e9fc240065bcf4" }
+intmax-zkp-core = { git = "https://github.com/InternetMaximalism/intmax-zkp-core", rev = "35d36739971fe065a81b853c7c1ba3fef3d8cf9e" }
 num-bigint = "0.4"
 plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
 regex = "1"
