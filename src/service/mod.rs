@@ -4,41 +4,46 @@ use std::{
     time::Instant,
 };
 
-use intmax_rollup_interface::{constants::*, interface::*};
-use intmax_zkp_core::{
-    merkle_tree::tree::MerkleProof,
-    rollup::{
-        block::BlockInfo,
-        circuits::{make_block_proof_circuit, BlockDetail},
-        gadgets::deposit_block::VariableIndex,
-    },
-    sparse_merkle_tree::{
-        gadgets::{process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof},
-        goldilocks_poseidon::{
-            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
-            RootDataTmp, WrappedHashOut,
+use intmax_rollup_interface::{
+    constants::*,
+    interface::*,
+    intmax_zkp_core::{
+        merkle_tree::tree::MerkleProof,
+        plonky2::{
+            field::types::{Field, PrimeField64},
+            hash::{hash_types::HashOut, poseidon::PoseidonHash},
+            iop::witness::PartialWitness,
+            plonk::{
+                circuit_data::CircuitConfig,
+                config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+            },
         },
-        node_data::NodeData,
-        root_data::RootData,
-    },
-    transaction::{
-        asset::{Asset, ContributedAsset, ReceivedAssetProof, TokenKind},
-        block_header::get_block_hash,
-        circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
-        gadgets::merge::MergeProof,
-    },
-    zkdsa::{
-        account::{Account, Address, PublicKey},
-        circuits::{make_simple_signature_circuit, SimpleSignatureProofWithPublicInputs},
-    },
-};
-use plonky2::{
-    field::types::{Field, PrimeField64},
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
-    iop::witness::PartialWitness,
-    plonk::{
-        circuit_data::CircuitConfig,
-        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+        rollup::{
+            block::BlockInfo,
+            circuits::{make_block_proof_circuit, BlockDetail},
+            gadgets::deposit_block::VariableIndex,
+        },
+        sparse_merkle_tree::{
+            gadgets::{
+                process::process_smt::SmtProcessProof, verify::verify_smt::SmtInclusionProof,
+            },
+            goldilocks_poseidon::{
+                LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+                RootDataTmp, WrappedHashOut,
+            },
+            node_data::NodeData,
+            root_data::RootData,
+        },
+        transaction::{
+            asset::{Asset, ContributedAsset, ReceivedAssetProof, TokenKind},
+            block_header::get_block_hash,
+            circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
+            gadgets::merge::MergeProof,
+        },
+        zkdsa::{
+            account::{Account, Address, PublicKey},
+            circuits::{make_simple_signature_circuit, SimpleSignatureProofWithPublicInputs},
+        },
     },
 };
 use serde::{Deserialize, Serialize};
@@ -91,6 +96,26 @@ impl<'de> serde::Deserialize<'de> for Config {
     }
 }
 
+pub fn check_compatibility_with_server(service: &Config) -> anyhow::Result<()> {
+    let version_info = service.check_health();
+    match version_info {
+        Ok(version_info) => {
+            if version_info.name != *AGGREGATOR_NAME {
+                anyhow::bail!("Given aggregator URL is invalid.");
+            }
+
+            if !version_info.version.starts_with("v0.4") {
+                anyhow::bail!("Given aggregator URL is valid but is an incompatible version. If you get this error, synchronizing this CLI to the latest version may solve the problem. For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli#update .");
+            }
+        }
+        Err(_) => {
+            anyhow::bail!("Given aggregator URL is invalid.");
+        }
+    }
+
+    Ok(())
+}
+
 impl Config {
     pub fn new(aggregator_url: &str) -> Self {
         Self {
@@ -108,21 +133,9 @@ impl Config {
         base_url + api_path
     }
 
-    pub fn set_aggregator_url(&self, aggregator_url: Option<String>) {
+    pub fn set_aggregator_url(&self, aggregator_url: Option<String>) -> anyhow::Result<()> {
         if let Some(new_url) = aggregator_url {
-            let version_info = Config::new(&new_url).check_health();
-            match version_info {
-                Ok(version_info) => {
-                    if version_info.name != *AGGREGATOR_NAME {
-                        println!("Given URL is invalid.");
-                        return;
-                    }
-                }
-                Err(_) => {
-                    println!("Given URL is invalid.");
-                    return;
-                }
-            }
+            check_compatibility_with_server(&Config::new(&new_url))?;
 
             let _ = std::mem::replace::<String>(
                 &mut self.aggregator_url.lock().unwrap(),
@@ -130,8 +143,13 @@ impl Config {
             );
             println!("The new aggregator URL is {new_url} .");
         } else {
-            println!("The aggregator URL is {} .", self.aggregator_api_url(""));
+            println!(
+                "The current aggregator URL is {} .",
+                self.aggregator_api_url("")
+            );
         }
+
+        Ok(())
     }
 
     pub fn register_account(&self, public_key: PublicKey<F>) -> Address<F> {
@@ -1216,6 +1234,16 @@ impl Config {
 
         let resp = resp.json::<ResponseAssetReceivedQuery>()?;
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
+
+        dbg!(resp
+            .proofs
+            .iter()
+            .map(|v| (
+                v.assets.clone(),
+                v.diff_tree_inclusion_proof.0.clone(),
+                v.is_deposit
+            ))
+            .collect::<Vec<_>>());
 
         Ok((resp.proofs, latest_block_number))
     }

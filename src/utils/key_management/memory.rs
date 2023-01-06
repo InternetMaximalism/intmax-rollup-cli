@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use intmax_zkp_core::{
+use intmax_rollup_interface::intmax_zkp_core::{
+    plonky2::field::goldilocks_field::GoldilocksField,
     sparse_merkle_tree::{
         goldilocks_poseidon::{GoldilocksHashOut, NodeDataMemory, RootDataMemory, WrappedHashOut},
         node_data::{Node, NodeData},
@@ -12,7 +13,6 @@ use intmax_zkp_core::{
     },
     zkdsa::account::{Account, Address},
 };
-use plonky2::field::goldilocks_field::GoldilocksField;
 use serde::{Deserialize, Serialize};
 
 use super::types::{Assets, Wallet};

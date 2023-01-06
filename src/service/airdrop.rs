@@ -3,12 +3,12 @@ use std::{
     str::FromStr,
 };
 
-use intmax_zkp_core::{
+use intmax_rollup_interface::intmax_zkp_core::{
+    plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
     rollup::gadgets::deposit_block::VariableIndex,
     transaction::asset::{ContributedAsset, TokenKind},
     zkdsa::account::Address,
 };
-use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 
 const CSV_EXAMPLE_LINK: &str =
     "https://github.com/InternetMaximalism/intmax-rollup-cli/blob/main/tests/airdrop/README.md";
