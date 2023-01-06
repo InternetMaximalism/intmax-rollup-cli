@@ -538,6 +538,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=fee6aacdc73d9a2e702188279b74ee288428ea1b#fee6aacdc73d9a2e702188279b74ee288428ea1b"
 dependencies = [
  "hex",
  "intmax-zkp-core",
@@ -549,7 +550,7 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=2dba501145c7ded6ecc8b86c5a367458a7393beb#2dba501145c7ded6ecc8b86c5a367458a7393beb"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=02284e580ffcc493ad267a6769726818aaa35f86#02284e580ffcc493ad267a6769726818aaa35f86"
 dependencies = [
  "anyhow",
  "hex",
@@ -630,7 +631,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "maybe_rayon"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/plonky2?rev=4cb0b48df1d227d5461a4c28ed025aaea64e2e62#4cb0b48df1d227d5461a4c28ed025aaea64e2e62"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "rayon",
 ]
@@ -870,7 +871,7 @@ checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 [[package]]
 name = "plonky2"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/plonky2?rev=4cb0b48df1d227d5461a4c28ed025aaea64e2e62#4cb0b48df1d227d5461a4c28ed025aaea64e2e62"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -891,7 +892,7 @@ dependencies = [
 [[package]]
 name = "plonky2_field"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/plonky2?rev=4cb0b48df1d227d5461a4c28ed025aaea64e2e62#4cb0b48df1d227d5461a4c28ed025aaea64e2e62"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -906,7 +907,7 @@ dependencies = [
 [[package]]
 name = "plonky2_util"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/plonky2?rev=4cb0b48df1d227d5461a4c28ed025aaea64e2e62#4cb0b48df1d227d5461a4c28ed025aaea64e2e62"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 
 [[package]]
 name = "ppv-lite86"
