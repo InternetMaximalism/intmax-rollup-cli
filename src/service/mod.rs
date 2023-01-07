@@ -1315,7 +1315,6 @@ pub fn calc_merge_witnesses<
         }
 
         for asset in witness.assets {
-            dbg!(&asset);
             user_state.assets.add(asset.kind, asset.amount, merge_key);
             user_state
                 .asset_tree
