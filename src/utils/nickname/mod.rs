@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
-use intmax_zkp_core::zkdsa::account::Address;
-use plonky2::field::goldilocks_field::GoldilocksField;
+use intmax_rollup_interface::intmax_zkp_core::{
+    plonky2::field::goldilocks_field::GoldilocksField, zkdsa::account::Address,
+};
 use serde::{Deserialize, Serialize};
 
 type F = GoldilocksField;

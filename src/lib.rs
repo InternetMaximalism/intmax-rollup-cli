@@ -9,25 +9,27 @@ mod tests {
     // type H = <C as GenericConfig<D>>::InnerHasher;
     type F = <C as GenericConfig<D>>::F;
 
-    use intmax_rollup_interface::constants::N_LOG_TXS;
-    use intmax_zkp_core::{
-        merkle_tree::tree::get_merkle_proof,
-        rollup::gadgets::deposit_block::DepositInfo,
-        sparse_merkle_tree::{
-            goldilocks_poseidon::{
-                GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
-                LayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
-                RootDataMemory, RootDataTmp, WrappedHashOut,
+    use intmax_rollup_interface::{
+        constants::N_LOG_TXS,
+        intmax_zkp_core::{
+            merkle_tree::tree::get_merkle_proof,
+            plonky2::{
+                field::types::Field,
+                hash::{hash_types::HashOut, poseidon::PoseidonHash},
+                plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
             },
-            proof::SparseMerkleInclusionProof,
+            rollup::gadgets::deposit_block::DepositInfo,
+            sparse_merkle_tree::{
+                goldilocks_poseidon::{
+                    GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
+                    LayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+                    RootDataMemory, RootDataTmp, WrappedHashOut,
+                },
+                proof::SparseMerkleInclusionProof,
+            },
+            transaction::{block_header::get_block_hash, gadgets::merge::MergeProof},
+            zkdsa::account::{Account, Address},
         },
-        transaction::{block_header::get_block_hash, gadgets::merge::MergeProof},
-        zkdsa::account::{Account, Address},
-    };
-    use plonky2::{
-        field::types::Field,
-        hash::{hash_types::HashOut, poseidon::PoseidonHash},
-        plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
     };
 
     use crate::{

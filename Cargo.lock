@@ -519,16 +519,14 @@ dependencies = [
 
 [[package]]
 name = "intmax"
-version = "1.0.2-alpha"
+version = "1.1.0-alpha"
 dependencies = [
  "anyhow",
  "ctrlc",
  "dirs",
  "hex",
  "intmax-rollup-interface",
- "intmax-zkp-core",
  "num-bigint",
- "plonky2",
  "regex",
  "reqwest",
  "serde",
@@ -540,11 +538,10 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=b8efc00481b7a8a1cf035bab08e9fc240065bcf4#b8efc00481b7a8a1cf035bab08e9fc240065bcf4"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=fee6aacdc73d9a2e702188279b74ee288428ea1b#fee6aacdc73d9a2e702188279b74ee288428ea1b"
 dependencies = [
  "hex",
  "intmax-zkp-core",
- "plonky2",
  "serde",
  "serde-hex",
  "serde_json",
@@ -553,7 +550,7 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=35d36739971fe065a81b853c7c1ba3fef3d8cf9e#35d36739971fe065a81b853c7c1ba3fef3d8cf9e"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=02284e580ffcc493ad267a6769726818aaa35f86#02284e580ffcc493ad267a6769726818aaa35f86"
 dependencies = [
  "anyhow",
  "hex",
@@ -561,7 +558,6 @@ dependencies = [
  "plonky2",
  "rand",
  "serde",
- "serde-hex",
  "serde_json",
 ]
 
@@ -635,7 +631,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "maybe_rayon"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "rayon",
 ]
@@ -875,7 +871,7 @@ checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 [[package]]
 name = "plonky2"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -888,7 +884,6 @@ dependencies = [
  "plonky2_field",
  "plonky2_util",
  "rand",
- "rand_chacha",
  "serde",
  "static_assertions",
  "unroll",
@@ -897,7 +892,7 @@ dependencies = [
 [[package]]
 name = "plonky2_field"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -912,10 +907,7 @@ dependencies = [
 [[package]]
 name = "plonky2_util"
 version = "0.1.0"
-source = "git+https://github.com/mir-protocol/plonky2?rev=d527073416dd8cbc04457b8cb856b2fec3fa0e6c#d527073416dd8cbc04457b8cb856b2fec3fa0e6c"
-dependencies = [
- "rand",
-]
+source = "git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c#f99ed9cc3ad62ee2d526f668adfa45fdeafed5a7"
 
 [[package]]
 name = "ppv-lite86"

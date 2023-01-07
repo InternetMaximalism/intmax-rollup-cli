@@ -7,13 +7,24 @@ ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commi
 For Ubuntu: [Install Guide (Ubuntu)](./docs/for_ubuntu.md)
 
 ```sh
-git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git
+git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git -b staging
 cd intmax-rollup-cli
 cargo --version # 1.65.0-nightly
 cargo build --release
 alias intmax='./target/release/intmax'
 intmax config aggregator-url https://prealpha.testnet.intmax.io/
 ```
+
+## Update
+
+If the CLI version has been updated, the following commands can be used to synchronize.
+
+```sh
+git checkout staging # only for users who have been using v1.0.2-alpha or earlier
+git pull origin staging
+```
+
+For more information on the release, check [here](https://github.com/InternetMaximalism/intmax-rollup-cli/releases).
 
 ## Getting Started
 

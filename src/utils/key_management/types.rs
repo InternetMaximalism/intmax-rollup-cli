@@ -3,13 +3,13 @@ use std::{
     fmt::Debug,
 };
 
-use intmax_zkp_core::{
+use intmax_rollup_interface::intmax_zkp_core::{
+    plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField},
     sparse_merkle_tree::goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
     transaction::asset::TokenKind,
     zkdsa::account::Address,
 };
 use num_bigint::BigUint;
-use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::RichField};
 use serde::{Deserialize, Serialize};
 
 /// 受け取った token を merge key とともに保管する構造体

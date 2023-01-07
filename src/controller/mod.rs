@@ -6,14 +6,16 @@ use std::{
     str::FromStr,
 };
 
-use intmax_rollup_interface::constants::*;
-use intmax_zkp_core::{
-    rollup::gadgets::deposit_block::VariableIndex,
-    sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
-    transaction::asset::{ContributedAsset, TokenKind},
-    zkdsa::account::{Account, Address},
+use intmax_rollup_interface::{
+    constants::*,
+    intmax_zkp_core::{
+        plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        rollup::gadgets::deposit_block::VariableIndex,
+        sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
+        transaction::asset::{ContributedAsset, TokenKind},
+        zkdsa::account::{Account, Address},
+    },
 };
-use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 use structopt::StructOpt;
 
 use crate::{
@@ -356,6 +358,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
         }
     };
 
+    if let SubCommand::Config { config_command: _ } = sub_command {
+        // nothing to do
+    } else {
+        check_compatibility_with_server(&service)?;
+    }
+
     let parse_address = |wallet: &WalletOnMemory,
                          //  nickname_table: &NicknameTable,
                          user_address: Option<String>|
@@ -564,7 +572,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
     match sub_command {
         SubCommand::Config { config_command } => match config_command {
             ConfigCommand::AggregatorUrl { aggregator_url } => {
-                service.set_aggregator_url(aggregator_url);
+                service.set_aggregator_url(aggregator_url)?;
 
                 let encoded_service = serde_json::to_string(&service).unwrap();
                 let mut file = File::create(config_file_path)?;
