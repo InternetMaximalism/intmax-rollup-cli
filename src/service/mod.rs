@@ -498,9 +498,8 @@ impl Config {
                 .cloned()
                 .collect::<Vec<_>>();
             for assets in recovered_assets {
-                // dbg!(&assets);
                 for asset in assets.0 {
-                    // 既に recover されている asset を再び感情しない.
+                    // Assets that have already been already recovered will not be recorded again.
                     let old_amount = user_state
                         .asset_tree
                         .find(
@@ -1235,16 +1234,6 @@ impl Config {
         let resp = resp.json::<ResponseAssetReceivedQuery>()?;
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
-        dbg!(resp
-            .proofs
-            .iter()
-            .map(|v| (
-                v.assets.clone(),
-                v.diff_tree_inclusion_proof.0.clone(),
-                v.is_deposit
-            ))
-            .collect::<Vec<_>>());
-
         Ok((resp.proofs, latest_block_number))
     }
 
@@ -1326,6 +1315,7 @@ pub fn calc_merge_witnesses<
         }
 
         for asset in witness.assets {
+            dbg!(&asset);
             user_state.assets.add(asset.kind, asset.amount, merge_key);
             user_state
                 .asset_tree
