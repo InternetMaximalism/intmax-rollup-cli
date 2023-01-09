@@ -10,7 +10,7 @@ mod tests {
     type F = <C as GenericConfig<D>>::F;
 
     use intmax_rollup_interface::{
-        constants::N_LOG_TXS,
+        constants::*,
         intmax_zkp_core::{
             merkle_tree::tree::get_merkle_proof,
             plonky2::{
@@ -111,7 +111,8 @@ mod tests {
             .unwrap();
 
         // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
-        let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, N_LOG_TXS);
+        let merge_inclusion_proof1 =
+            get_merkle_proof(&[deposit_diff_root.into()], 0, ROLLUP_CONSTANTS.log_n_txs);
 
         let deposit_nonce = WrappedHashOut::ZERO;
         let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
