@@ -252,22 +252,8 @@ impl Config {
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let user_tx_proof = {
             let config = CircuitConfig::standard_recursion_config();
-            let merge_and_purge_circuit = make_user_proof_circuit::<
-                F,
-                C,
-                D,
-                N_LOG_MAX_USERS,
-                N_LOG_MAX_TXS,
-                N_LOG_MAX_CONTRACTS,
-                N_LOG_MAX_VARIABLES,
-                N_LOG_TXS,
-                N_LOG_RECIPIENTS,
-                N_LOG_CONTRACTS,
-                N_LOG_VARIABLES,
-                N_DIFFS,
-                N_MERGES,
-                N_DEPOSITS,
-            >(config);
+            let merge_and_purge_circuit =
+                make_user_proof_circuit::<F, C, D>(config, ROLLUP_CONSTANTS);
 
             let mut pw = PartialWitness::new();
             let _public_inputs = merge_and_purge_circuit.targets.set_witness(
@@ -561,7 +547,8 @@ impl Config {
         let old_user_asset_root = user_state.asset_tree.get_root().unwrap();
         // dbg!(&old_user_asset_root);
 
-        let dequeued_len = N_TXS.min(user_state.rest_received_assets.len());
+        let n_txs = 1 << ROLLUP_CONSTANTS.log_n_txs;
+        let dequeued_len = n_txs.min(user_state.rest_received_assets.len());
         #[cfg(feature = "verbose")]
         dbg!(user_state.rest_received_assets.len());
 
@@ -693,12 +680,12 @@ impl Config {
         }
 
         // 必要な input_assets が多すぎる場合, 送信は失敗する.
-        if purge_input_witness.len() > N_DIFFS {
+        if purge_input_witness.len() > ROLLUP_CONSTANTS.n_diffs {
             anyhow::bail!("too many fragments of assets");
         }
 
         // 必要な output_assets が多すぎる場合, 送信は失敗する.
-        if purge_output_witness.len() > N_DIFFS {
+        if purge_output_witness.len() > ROLLUP_CONSTANTS.n_diffs {
             anyhow::bail!("too many destinations and token kinds");
         }
 
@@ -891,24 +878,13 @@ impl Config {
 
         let config = CircuitConfig::standard_recursion_config();
         let simple_signature_circuit = make_simple_signature_circuit(config.clone());
-        let merge_and_purge_circuit = make_user_proof_circuit(config.clone());
-        let block_circuit = make_block_proof_circuit::<
-            F,
-            C,
-            D,
-            N_LOG_MAX_USERS,
-            N_LOG_MAX_TXS,
-            N_LOG_MAX_CONTRACTS,
-            N_LOG_MAX_VARIABLES,
-            N_LOG_TXS,
-            N_LOG_RECIPIENTS,
-            N_LOG_CONTRACTS,
-            N_LOG_VARIABLES,
-            N_DIFFS,
-            N_MERGES,
-            N_TXS,
-            N_DEPOSITS,
-        >(config, &merge_and_purge_circuit, &simple_signature_circuit);
+        let merge_and_purge_circuit = make_user_proof_circuit(config.clone(), ROLLUP_CONSTANTS);
+        let block_circuit = make_block_proof_circuit::<F, C, D>(
+            config,
+            ROLLUP_CONSTANTS,
+            &merge_and_purge_circuit,
+            &simple_signature_circuit,
+        );
 
         let nodes_db = NodeDataMemory::default();
         let mut deposit_tree =

@@ -8,7 +8,7 @@ anyhow = "1.0"
 ctrlc = "3.2"
 dirs = "4.0"
 hex = "0.4"
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "fee6aacdc73d9a2e702188279b74ee288428ea1b" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "dac04837290b2e565331f72fc06b00fda4f326a5" }
 num-bigint = "0.4"
 regex = "1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }

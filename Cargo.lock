@@ -538,7 +538,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=fee6aacdc73d9a2e702188279b74ee288428ea1b#fee6aacdc73d9a2e702188279b74ee288428ea1b"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=dac04837290b2e565331f72fc06b00fda4f326a5#dac04837290b2e565331f72fc06b00fda4f326a5"
 dependencies = [
  "hex",
  "intmax-zkp-core",
@@ -550,7 +550,7 @@ dependencies = [
 [[package]]
 name = "intmax-zkp-core"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=02284e580ffcc493ad267a6769726818aaa35f86#02284e580ffcc493ad267a6769726818aaa35f86"
+source = "git+https://github.com/InternetMaximalism/intmax-zkp-core?rev=2cf8a9a8e976b716ef2217cce77d458730458bb6#2cf8a9a8e976b716ef2217cce77d458730458bb6"
 dependencies = [
  "anyhow",
  "hex",

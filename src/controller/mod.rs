@@ -455,7 +455,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
         // マージしていない差分が残り `N_MERGES` 個になるまでマージを繰り返す.
         // 残った差分は purge と一緒のトランザクションに含める.
-        merge(wallet, user_address, N_MERGES)?;
+        merge(wallet, user_address, ROLLUP_CONSTANTS.n_merges)?;
 
         {
             let user_state = wallet
@@ -536,7 +536,7 @@ pub fn invoke_command() -> anyhow::Result<()> {
             anyhow::bail!("asset list is empty");
         }
 
-        if distribution_list.len() > N_DIFFS.min(N_MERGES) {
+        if distribution_list.len() > ROLLUP_CONSTANTS.n_diffs.min(ROLLUP_CONSTANTS.n_merges) {
             anyhow::bail!("too many destinations and token kinds");
         }
 
