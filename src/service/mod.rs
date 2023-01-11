@@ -1,3 +1,5 @@
+use reqwest::Client;
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -5,7 +7,7 @@ use std::{
 };
 
 use intmax_rollup_interface::{
-    constants::*,
+    constants::ROLLUP_CONSTANTS,
     interface::*,
     intmax_zkp_core::{
         merkle_tree::tree::MerkleProof,
@@ -50,9 +52,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::key_management::memory::UserState;
 
-mod airdrop;
-pub use airdrop::read_distribution_from_csv;
-
 const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
 type F = <C as GenericConfig<D>>::F;
@@ -96,8 +95,8 @@ impl<'de> serde::Deserialize<'de> for Config {
     }
 }
 
-pub fn check_compatibility_with_server(service: &Config) -> anyhow::Result<()> {
-    let version_info = service.check_health();
+pub async fn check_compatibility_with_server(service: &Config) -> anyhow::Result<()> {
+    let version_info = service.check_health().await;
     match version_info {
         Ok(version_info) => {
             if version_info.name != *AGGREGATOR_NAME {
@@ -133,9 +132,9 @@ impl Config {
         base_url + api_path
     }
 
-    pub fn set_aggregator_url(&self, aggregator_url: Option<String>) -> anyhow::Result<()> {
+    pub async fn set_aggregator_url(&self, aggregator_url: Option<String>) -> anyhow::Result<()> {
         if let Some(new_url) = aggregator_url {
-            check_compatibility_with_server(&Config::new(&new_url))?;
+            check_compatibility_with_server(&Config::new(&new_url)).await?;
 
             let _ = std::mem::replace::<String>(
                 &mut self.aggregator_url.lock().unwrap(),
@@ -152,7 +151,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn register_account(&self, public_key: PublicKey<F>) -> Address<F> {
+    pub async fn register_account(&self, public_key: PublicKey<F>) -> Address<F> {
         let payload = RequestAccountRegisterBody {
             public_key: public_key.into(),
         };
@@ -163,11 +162,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -175,18 +175,19 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseAccountRegisterBody>()
+            .await
             .expect("fail to parse JSON");
 
         resp.address
     }
 
     /// test function
-    pub fn deposit_assets(
+    pub async fn deposit_assets(
         &self,
         user_address: Address<F>,
         deposit_list: Vec<ContributedAsset<F>>,
@@ -213,11 +214,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -225,11 +227,12 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseDepositAddBody>()
+            .await
             .expect("fail to parse JSON");
 
         if resp.ok {
@@ -241,7 +244,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn send_assets(
+    pub async fn send_assets(
         &self,
         account: Account<F>,
         merge_witnesses: &[MergeProof<F>],
@@ -294,11 +297,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -306,11 +310,12 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseTxSendBody>()
+            .await
             .expect("fail to parse JSON");
 
         assert_eq!(resp.tx_hash, transaction.tx_hash);
@@ -318,109 +323,23 @@ impl Config {
         transaction
     }
 
-    // pub fn merge_deposits(
-    //     &self,
-    //     blocks: Vec<BlockInfo<F>>,
-    //     user_address: Address<F>,
-    //     user_state: &mut UserState<NodeDataMemory, RootDataMemory>,
-    // ) -> Vec<MergeProof<F>> {
-    //     let mut merge_witnesses = vec![];
-    //     for block in blocks {
-    //         let user_deposits = block
-    //             .deposit_list
-    //             .iter()
-    //             .filter(|leaf| leaf.receiver_address == user_address)
-    //             .collect::<Vec<_>>();
-    //         let (deposit_proof1, deposit_proof2) =
-    //             make_deposit_proof(&block.deposit_list, user_address, N_LOG_TXS);
-    //         dbg!(&deposit_proof1.root, deposit_proof1.value);
-
-    //         let deposit_tx_hash =
-    //             PoseidonHash::two_to_one(*deposit_proof1.value, get_block_hash(&block.header))
-    //                 .into();
-    //         dbg!(&deposit_tx_hash);
-    //         let merge_key = deposit_tx_hash;
-
-    //         let diff_tree_inclusion_proof = (block.header, deposit_proof1, deposit_proof2);
-
-    //         for found_deposit_info in user_deposits {
-    //             let mut inner_asset_tree = LayeredPoseidonSparseMerkleTree::new(
-    //                 user_state.asset_tree.nodes_db.clone(),
-    //                 RootDataTmp::default(),
-    //             );
-    //             {
-    //                 user_state.assets.add(
-    //                     TokenKind {
-    //                         contract_address: found_deposit_info.contract_address,
-    //                         variable_index: found_deposit_info.variable_index,
-    //                     },
-    //                     found_deposit_info.amount.to_canonical_u64(),
-    //                     merge_key,
-    //                 );
-    //                 inner_asset_tree
-    //                     .set(
-    //                         found_deposit_info.contract_address.0.into(),
-    //                         found_deposit_info.variable_index.to_hash_out().into(),
-    //                         HashOut::from_partial(&[found_deposit_info.amount]).into(),
-    //                     )
-    //                     .unwrap();
-    //             }
-
-    //             let asset_root = inner_asset_tree.get_root().unwrap();
-
-    //             let mut asset_tree = PoseidonSparseMerkleTree::new(
-    //                 user_state.asset_tree.nodes_db.clone(),
-    //                 RootDataTmp::from(user_state.asset_tree.get_root().unwrap()),
-    //             );
-    //             let merge_process_proof = asset_tree.set(merge_key, asset_root).unwrap();
-    //             user_state
-    //                 .asset_tree
-    //                 .change_root(asset_tree.get_root().unwrap())
-    //                 .unwrap();
-    //             let amount = user_state
-    //                 .asset_tree
-    //                 .find(
-    //                     &merge_key,
-    //                     &found_deposit_info.contract_address.to_hash_out().into(),
-    //                     &found_deposit_info.variable_index.to_hash_out().into(),
-    //                 )
-    //                 .unwrap();
-    //             assert_ne!(amount.2.value, WrappedHashOut::ZERO);
-
-    //             // deposit のときは nonce が 0
-    //             let deposit_nonce = Default::default();
-    //             let merge_proof = MergeProof {
-    //                 is_deposit: true,
-    //                 diff_tree_inclusion_proof: diff_tree_inclusion_proof.clone(),
-    //                 merge_process_proof,
-    //                 latest_account_tree_inclusion_proof: SmtInclusionProof::with_root(
-    //                     Default::default(),
-    //                 ),
-    //                 nonce: deposit_nonce,
-    //             };
-    //             merge_witnesses.push(merge_proof);
-    //         }
-    //     }
-
-    //     merge_witnesses
-    // }
-
-    pub fn check_health(&self) -> anyhow::Result<ResponseCheckHealth> {
+    pub async fn check_health(&self) -> anyhow::Result<ResponseCheckHealth> {
         let api_path = "/";
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .send()?;
+            .send()
+            .await?;
         if resp.status() != 200 {
-            let error_message = resp.text()?;
+            let error_message = resp.text().await?;
             anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
-        let resp = resp.json::<ResponseCheckHealth>()?;
+        let resp = resp.json::<ResponseCheckHealth>().await?;
 
         Ok(resp)
     }
 
-    pub fn sync_sent_transaction<
+    pub async fn sync_sent_transaction<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
@@ -434,6 +353,7 @@ impl Config {
                 Some(user_state.last_seen_block_number),
                 None,
             )
+            .await
             .unwrap_or_else(|err| {
                 dbg!(err);
 
@@ -444,6 +364,7 @@ impl Config {
                 Some(user_state.last_seen_block_number),
                 Some(last_seen_block_number),
             )
+            .await
             .unwrap_or_else(|err| {
                 dbg!(err);
 
@@ -534,7 +455,7 @@ impl Config {
         user_state.last_seen_block_number = last_seen_block_number;
     }
 
-    pub fn merge_and_purge_asset<
+    pub async fn merge_and_purge_asset<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
     >(
@@ -693,14 +614,16 @@ impl Config {
 
         println!("WARNING: DO NOT interrupt execution of this program while a transaction is being sent.");
 
-        let transaction = self.send_assets(
-            user_state.account,
-            &merge_witnesses,
-            &purge_input_witness,
-            &purge_output_witness,
-            nonce,
-            old_user_asset_root,
-        );
+        let transaction = self
+            .send_assets(
+                user_state.account,
+                &merge_witnesses,
+                &purge_input_witness,
+                &purge_output_witness,
+                nonce,
+                old_user_asset_root,
+            )
+            .await;
         // dbg!(transaction.diff_root);
 
         // send API に含めた merge transaction は削除する.
@@ -742,7 +665,8 @@ impl Config {
                 nonce,
                 purge_output_inclusion_witnesses,
                 assets_list,
-            );
+            )
+            .await;
         }
 
         user_state
@@ -753,7 +677,7 @@ impl Config {
     }
 
     /// `purge_output_inclusion_witnesses` は tx_diff_tree の receiver_address 層に関する inclusion proof
-    pub fn broadcast_transaction(
+    pub async fn broadcast_transaction(
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
@@ -782,11 +706,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -794,11 +719,12 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseTxBroadcastBody>()
+            .await
             .expect("fail to parse JSON");
 
         if resp.ok {
@@ -808,7 +734,7 @@ impl Config {
         }
     }
 
-    pub fn trigger_propose_block(&self) -> HashOut<F> {
+    pub async fn trigger_propose_block(&self) -> HashOut<F> {
         let body = r#"{}"#;
 
         let api_path = "/block/propose";
@@ -817,11 +743,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -829,17 +756,18 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseBlockProposeBody>()
+            .await
             .expect("fail to parse JSON");
 
         *resp.new_world_state_root
     }
 
-    pub fn trigger_approve_block(&self) -> BlockInfo<F> {
+    pub async fn trigger_approve_block(&self) -> BlockInfo<F> {
         let body = r#"{}"#;
 
         let api_path = "/block/approve";
@@ -848,11 +776,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -860,21 +789,22 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseBlockApproveBody>()
+            .await
             .expect("fail to parse JSON");
 
         resp.new_block
     }
 
-    pub fn verify_block(&self, block_number: Option<u32>) -> anyhow::Result<()> {
-        let latest_block = self.get_latest_block().unwrap();
+    pub async fn verify_block(&self, block_number: Option<u32>) -> anyhow::Result<()> {
+        let latest_block = self.get_latest_block().await.unwrap();
         let block_number = block_number.unwrap_or(latest_block.header.block_number);
         println!("block number: {block_number}");
-        let block_details = self.get_block_details(block_number).unwrap();
+        let block_details = self.get_block_details(block_number).await.unwrap();
 
         let config = CircuitConfig::standard_recursion_config();
         let simple_signature_circuit = make_simple_signature_circuit(config.clone());
@@ -931,7 +861,7 @@ impl Config {
     }
 
     /// 最新の block を取得する.
-    pub fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
+    pub async fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
         // let mut query = vec![];
 
         let api_path = "/block/latest";
@@ -940,27 +870,28 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .send()?;
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            let error_message = resp.text()?;
+            let error_message = resp.text().await?;
             anyhow::bail!("unexpected response from {}: {}", api_path, error_message);
         }
 
-        let resp = resp.json::<ResponseLatestBlockQuery>()?;
+        let resp = resp.json::<ResponseLatestBlockQuery>().await?;
 
         Ok(resp.block)
     }
 
     /// block number が since より大きく until 以下の block を可能な限り全て取得する.
     /// Returns `(blocks, until_or_latest_block_number)`
-    pub fn get_blocks(
+    pub async fn get_blocks(
         &self,
         since: Option<u32>,
         until: Option<u32>,
@@ -985,26 +916,26 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = reqwest::blocking::Client::new()
+        let request = Client::new()
             .get(self.aggregator_api_url(api_path))
             .query(&query);
-        let resp = request.send()?;
+        let resp = request.send().await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().await.unwrap());
         }
 
-        let resp = resp.json::<ResponseBlockQuery>()?;
+        let resp = resp.json::<ResponseBlockQuery>().await?;
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
         Ok((resp.blocks, latest_block_number))
     }
 
-    pub fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
+    pub async fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
         let query = vec![("block_number", block_number.to_string())];
 
         let api_path = "/block/detail";
@@ -1013,20 +944,20 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = reqwest::blocking::Client::new()
+        let request = Client::new()
             .get(self.aggregator_api_url(api_path))
             .query(&query);
-        let resp = request.send()?;
+        let resp = request.send().await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().await.unwrap());
         }
 
-        let resp = resp.json::<ResponseBlockDetailQuery>()?;
+        let resp = resp.json::<ResponseBlockDetailQuery>().await?;
 
         Ok(resp.block_details)
     }
@@ -1058,7 +989,7 @@ impl Config {
         received_signature
     }
 
-    pub fn sign_proposed_block<
+    pub async fn sign_proposed_block<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
         R: RootData<WrappedHashOut<F>>,
     >(
@@ -1066,36 +997,29 @@ impl Config {
         user_state: &mut UserState<D, R>,
         user_address: Address<F>,
     ) {
-        let pending_transactions = user_state
-            .sent_transactions
-            .iter_mut()
-            .filter(|(_, (_, proposed_block_number))| proposed_block_number.is_none());
-        for (tx_hash, (_, proposed_block_number)) in pending_transactions {
-            self.get_transaction_inclusion_witness(user_address, *tx_hash)
-                .map(|(_tx_inclusion_witness, user_asset_inclusion_witness)| {
-                    let latest_block = self.get_latest_block().unwrap();
-                    let proposed_world_state_root = user_asset_inclusion_witness.root;
-                    let received_signature =
-                        self.sign_to_message(user_state.account, *proposed_world_state_root);
-                    self.send_received_signature(received_signature, *tx_hash);
+        for (tx_hash, (_, proposed_block_number)) in user_state.sent_transactions.iter_mut() {
+            if proposed_block_number.is_some() {
+                continue;
+            }
 
-                    *proposed_block_number = Some(latest_block.header.block_number + 1);
-                })
-                .unwrap_or_else(|err| {
-                    let validation_error = format!(
-                        "{}: {}",
-                        "Validation error",
-                        "given transaction hash was not found in the current proposal block"
-                    );
-                    if !err.to_string().starts_with(&validation_error) {
-                        dbg!(err);
-                    }
-                });
+            let (_tx_inclusion_witness, user_asset_inclusion_witness) = self
+                .get_transaction_inclusion_witness(user_address, *tx_hash)
+                .await
+                .unwrap();
+
+            let latest_block = self.get_latest_block().await.unwrap();
+            let proposed_world_state_root = user_asset_inclusion_witness.root;
+            let received_signature =
+                self.sign_to_message(user_state.account, *proposed_world_state_root);
+            self.send_received_signature(received_signature, *tx_hash)
+                .await;
+
+            *proposed_block_number = Some(latest_block.header.block_number + 1);
         }
     }
 
     /// Returns `()`
-    pub fn get_transaction_inclusion_witness(
+    pub async fn get_transaction_inclusion_witness(
         &self,
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
@@ -1111,25 +1035,25 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = reqwest::blocking::Client::new()
+        let request = Client::new()
             .get(self.aggregator_api_url(api_path))
             .query(&query);
-        let resp = request.send()?;
+        let resp = request.send().await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().await.unwrap());
         }
 
-        let resp = resp.json::<ResponseTxReceiptQuery>()?;
+        let resp = resp.json::<ResponseTxReceiptQuery>().await?;
 
         Ok((resp.tx_inclusion_witness, resp.user_asset_inclusion_witness))
     }
 
-    pub fn send_received_signature(
+    pub async fn send_received_signature(
         &self,
         received_signature: SimpleSignatureProofWithPublicInputs<F, C, D>,
         tx_hash: WrappedHashOut<F>,
@@ -1147,11 +1071,12 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let resp = reqwest::blocking::Client::new()
+        let resp = Client::new()
             .post(self.aggregator_api_url(api_path))
             .body(body)
             .header(CONTENT_TYPE, "application/json")
             .send()
+            .await
             .expect("fail to post");
         #[cfg(feature = "verbose")]
         {
@@ -1159,11 +1084,12 @@ impl Config {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().unwrap());
+            panic!("{}", resp.text().await.unwrap());
         }
 
         let resp = resp
             .json::<ResponseSignedDiffSendBody>()
+            .await
             .expect("fail to parse JSON");
 
         if resp.ok {
@@ -1174,7 +1100,7 @@ impl Config {
     }
 
     /// Returns `(raw_merge_witnesses, until_or_latest_block_number)`
-    pub fn get_merge_transaction_witness(
+    pub async fn get_merge_transaction_witness(
         &self,
         user_address: Address<F>,
         since: Option<u32>,
@@ -1194,26 +1120,26 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = reqwest::blocking::Client::new()
+        let request = Client::new()
             .get(self.aggregator_api_url(api_path))
             .query(&query);
-        let resp = request.send()?;
+        let resp = request.send().await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().await.unwrap());
         }
 
-        let resp = resp.json::<ResponseAssetReceivedQuery>()?;
+        let resp = resp.json::<ResponseAssetReceivedQuery>().await?;
         let latest_block_number = until.unwrap_or(resp.latest_block_number);
 
         Ok((resp.proofs, latest_block_number))
     }
 
-    pub fn get_possession_proof(
+    pub async fn get_possession_proof(
         &self,
         user_address: Address<F>,
     ) -> anyhow::Result<SmtInclusionProof<F>> {
@@ -1227,20 +1153,20 @@ impl Config {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = reqwest::blocking::Client::new()
+        let request = Client::new()
             .get(self.aggregator_api_url(api_path))
             .query(&query);
-        let resp = request.send()?;
+        let resp = request.send().await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().unwrap());
+            anyhow::bail!("{}", resp.text().await.unwrap());
         }
 
-        let resp = resp.json::<ResponseUserAssetProofBody>()?;
+        let resp = resp.json::<ResponseUserAssetProofBody>().await?;
 
         Ok(resp.proof)
     }
