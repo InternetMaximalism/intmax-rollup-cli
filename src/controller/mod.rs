@@ -257,16 +257,15 @@ pub fn get_input(prompt: &str) -> String {
     input.trim().to_string()
 }
 
-pub struct Command {
+pub struct Config {
     config_file_path: PathBuf,
     wallet_dir_path: PathBuf,
     wallet_file_path: PathBuf,
     nickname_file_path: PathBuf,
-    nickname_table: NicknameTable,
-    service: Config,
+    service: ServiceConfig,
 }
 
-impl Command {
+impl Config {
     fn backup_wallet(&self, wallet: &WalletOnMemory) -> anyhow::Result<()> {
         let encoded_wallet = serde_json::to_string(&wallet).unwrap();
         std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
@@ -280,7 +279,7 @@ impl Command {
     fn parse_address(
         &self,
         wallet: &WalletOnMemory,
-        //  nickname_table: &NicknameTable,
+        nickname_table: &NicknameTable,
         user_address: Option<String>,
     ) -> anyhow::Result<Address<F>> {
         if let Some(user_address) = user_address {
@@ -288,8 +287,7 @@ impl Command {
                 anyhow::bail!("empty user address");
             } else if user_address.starts_with("0x") {
                 Address::from_str(&user_address)?
-            } else if let Some(user_address) =
-                self.nickname_table.nickname_to_address.get(&user_address)
+            } else if let Some(user_address) = nickname_table.nickname_to_address.get(&user_address)
             {
                 *user_address
             } else {
@@ -304,14 +302,19 @@ impl Command {
         }
     }
 
-    fn set_nickname(&mut self, address: Address<F>, nickname: String) -> anyhow::Result<()> {
+    fn set_nickname(
+        &mut self,
+        nickname_table: &mut NicknameTable,
+        address: Address<F>,
+        nickname: String,
+    ) -> anyhow::Result<()> {
         if nickname.starts_with("0x") {
             anyhow::bail!("nickname must not start with 0x");
         }
 
-        self.nickname_table.insert(address, nickname)?;
+        nickname_table.insert(address, nickname)?;
 
-        let encoded_nickname_table = serde_json::to_string(&self.nickname_table).unwrap();
+        let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
         std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
         let mut file = File::create(self.nickname_file_path.clone())?;
         write!(file, "{}", encoded_nickname_table)?;
@@ -342,14 +345,12 @@ impl Command {
 
             // 前の行で break しなかった場合, `user_state.rest_received_assets.len()` は 0 でないので,
             // "nothing to do" のエラーはハンドルする必要がない.
-            self.service
-                .merge_and_purge_asset(user_state, user_address, &[], false)
-                .await?;
+            merge_and_purge_asset(&self.service, user_state, user_address, &[], false).await?;
 
             self.backup_wallet(wallet)?;
 
-            self.service.trigger_propose_block().await;
-            self.service.trigger_approve_block().await;
+            trigger_propose_block(&self.service).await;
+            trigger_approve_block(&self.service).await;
         }
 
         Ok(())
@@ -367,9 +368,7 @@ impl Command {
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            self.service
-                .sync_sent_transaction(user_state, user_address)
-                .await;
+            sync_sent_transaction(&self.service, user_state, user_address).await;
 
             self.backup_wallet(wallet)?;
         }
@@ -385,10 +384,9 @@ impl Command {
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            let result = self
-                .service
-                .merge_and_purge_asset(user_state, user_address, purge_diffs, true)
-                .await;
+            let result =
+                merge_and_purge_asset(&self.service, user_state, user_address, purge_diffs, true)
+                    .await;
             match result {
                 Ok(_) => {}
                 Err(err) => {
@@ -404,7 +402,7 @@ impl Command {
             self.backup_wallet(wallet)?;
         }
 
-        self.service.trigger_propose_block().await;
+        trigger_propose_block(&self.service).await;
 
         {
             let user_state = wallet
@@ -412,14 +410,12 @@ impl Command {
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            self.service
-                .sign_proposed_block(user_state, user_address)
-                .await;
+            sign_proposed_block(&self.service, user_state, user_address).await;
 
             self.backup_wallet(wallet)?;
         }
 
-        self.service.trigger_approve_block().await;
+        trigger_approve_block(&self.service).await;
 
         Ok(())
     }
@@ -482,12 +478,10 @@ impl Command {
                 .iter_mut()
                 .for_each(|v| v.receiver_address = user_address);
 
-            self.service
-                .deposit_assets(user_address, deposit_list)
-                .await?;
+            deposit_assets(&self.service, user_address, deposit_list).await?;
 
-            self.service.trigger_propose_block().await;
-            self.service.trigger_approve_block().await;
+            trigger_propose_block(&self.service).await;
+            trigger_approve_block(&self.service).await;
         }
 
         let purge_diffs = distribution_list
@@ -518,7 +512,7 @@ impl Command {
             file.read_to_string(&mut encoded_service).unwrap();
             serde_json::from_str(&encoded_service).unwrap()
         } else {
-            Config::new(DEFAULT_AGGREGATOR_URL)
+            ServiceConfig::new(DEFAULT_AGGREGATOR_URL)
         };
 
         let mut wallet_dir_path = intmax_dir.clone();
@@ -534,14 +528,6 @@ impl Command {
         let mut nickname_file_path = wallet_dir_path.clone();
         nickname_file_path.push("nickname");
 
-        let nickname_table = if let Ok(mut file) = File::open(nickname_file_path.clone()) {
-            let mut encoded_nickname_table = String::new();
-            file.read_to_string(&mut encoded_nickname_table).unwrap();
-            serde_json::from_str(&encoded_nickname_table).unwrap()
-        } else {
-            NicknameTable::default()
-        };
-
         let mut wallet_file_path = wallet_dir_path.clone();
         wallet_file_path.push("wallet");
 
@@ -550,7 +536,6 @@ impl Command {
             wallet_dir_path,
             wallet_file_path,
             nickname_file_path,
-            nickname_table,
             service,
         }
     }
@@ -603,6 +588,14 @@ impl Command {
             }
         };
 
+        let mut nickname_table = if let Ok(mut file) = File::open(self.nickname_file_path.clone()) {
+            let mut encoded_nickname_table = String::new();
+            file.read_to_string(&mut encoded_nickname_table).unwrap();
+            serde_json::from_str(&encoded_nickname_table).unwrap()
+        } else {
+            NicknameTable::default()
+        };
+
         if let SubCommand::Config { config_command: _ } = sub_command {
             // nothing to do
         } else {
@@ -612,7 +605,7 @@ impl Command {
         match sub_command {
             SubCommand::Config { config_command } => match config_command {
                 ConfigCommand::AggregatorUrl { aggregator_url } => {
-                    self.service.set_aggregator_url(aggregator_url).await?;
+                    set_aggregator_url(&mut self.service, aggregator_url).await?;
 
                     let encoded_service = serde_json::to_string(&self.service).unwrap();
                     let mut file = File::create(&self.config_file_path)?;
@@ -631,7 +624,7 @@ impl Command {
                         // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
                         .unwrap_or_else(WrappedHashOut::rand);
                     let account = Account::new(*private_key);
-                    self.service.register_account(account.public_key).await;
+                    register_account(&self.service, account.public_key).await;
                     wallet.add_account(account)?;
 
                     println!("new account added: {}", account.address);
@@ -644,12 +637,12 @@ impl Command {
                     self.backup_wallet(&wallet)?;
 
                     if let Some(nickname) = nickname {
-                        self.set_nickname(account.address, nickname.clone())?;
+                        self.set_nickname(&mut nickname_table, account.address, nickname.clone())?;
                         println!("the above account appears replaced by {nickname}");
                     }
 
-                    self.service.trigger_propose_block().await;
-                    self.service.trigger_approve_block().await;
+                    trigger_propose_block(&self.service).await;
+                    trigger_approve_block(&self.service).await;
                 }
                 AccountCommand::List {} => {
                     let mut account_list = wallet.data.keys().collect::<Vec<_>>();
@@ -660,15 +653,14 @@ impl Command {
                         is_empty = false;
 
                         if Some(*address) == wallet.get_default_account() {
-                            if let Some(nickname) =
-                                self.nickname_table.address_to_nickname.get(address)
+                            if let Some(nickname) = nickname_table.address_to_nickname.get(address)
                             {
                                 println!("{address} [{nickname}] (default)",);
                             } else {
                                 println!("{address} (default)");
                             }
                         } else if let Some(nickname) =
-                            self.nickname_table.address_to_nickname.get(address)
+                            nickname_table.address_to_nickname.get(address)
                         {
                             println!("{address} [{nickname}]",);
                         } else {
@@ -690,7 +682,7 @@ impl Command {
                         } else if user_address.starts_with("0x") {
                             Address::from_str(&user_address)?
                         } else if let Some(user_address) =
-                            self.nickname_table.nickname_to_address.get(&user_address)
+                            nickname_table.nickname_to_address.get(&user_address)
                         {
                             *user_address
                         } else {
@@ -720,17 +712,17 @@ impl Command {
                         }
                         let address = Address::from_str(&address)?;
 
-                        self.set_nickname(address, nickname)?;
+                        self.set_nickname(&mut nickname_table, address, nickname)?;
 
                         println!("Done!");
                     }
                     NicknameCommand::Remove { nicknames } => {
                         for nickname in nicknames {
-                            self.nickname_table.remove(nickname)?;
+                            nickname_table.remove(nickname)?;
                         }
 
                         let encoded_nickname_table =
-                            serde_json::to_string(&self.nickname_table).unwrap();
+                            serde_json::to_string(&nickname_table).unwrap();
                         std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
                         let mut file = File::create(self.nickname_file_path.clone())?;
                         write!(file, "{}", encoded_nickname_table)?;
@@ -739,7 +731,7 @@ impl Command {
                         println!("Done!");
                     }
                     NicknameCommand::List {} => {
-                        for (nickname, address) in self.nickname_table.nickname_to_address.iter() {
+                        for (nickname, address) in nickname_table.nickname_to_address.iter() {
                             println!("{nickname} = {address}");
                         }
                     }
@@ -754,7 +746,7 @@ impl Command {
                 amount,
                 is_nft,
             } => {
-                let user_address = self.parse_address(&wallet, user_address)?;
+                let user_address = self.parse_address(&wallet, &nickname_table, user_address)?;
                 let _user_state = wallet
                     .data
                     .get(&user_address)
@@ -798,27 +790,23 @@ impl Command {
                     },
                     amount,
                 };
-                self.service
-                    .deposit_assets(user_address, vec![deposit_info])
-                    .await?;
+                deposit_assets(&self.service, user_address, vec![deposit_info]).await?;
 
-                self.service.trigger_propose_block().await;
-                self.service.trigger_approve_block().await;
+                trigger_propose_block(&self.service).await;
+                trigger_approve_block(&self.service).await;
             }
             SubCommand::Assets {
                 user_address,
                 // verbose,
             } => {
-                let user_address = self.parse_address(&wallet, user_address)?;
+                let user_address = self.parse_address(&wallet, &nickname_table, user_address)?;
                 {
                     let user_state = wallet
                         .data
                         .get_mut(&user_address)
                         .expect("user address was not found in wallet");
 
-                    self.service
-                        .sync_sent_transaction(user_state, user_address)
-                        .await;
+                    sync_sent_transaction(&self.service, user_state, user_address).await;
 
                     self.backup_wallet(&wallet)?;
                 }
@@ -843,8 +831,7 @@ impl Command {
                     for ((contract_address, variable_index), total_amount) in total_amount_map {
                         let decoded_contract_address =
                             Address::from_str(&contract_address).unwrap();
-                        let contract_address = self
-                            .nickname_table
+                        let contract_address = nickname_table
                             .address_to_nickname
                             .get(&decoded_contract_address)
                             // .map(|nickname| format!("{nickname} ({contract_address})"))
@@ -865,7 +852,8 @@ impl Command {
             SubCommand::Transaction { tx_command } => {
                 match tx_command {
                     TransactionCommand::Merge { user_address } => {
-                        let user_address = self.parse_address(&wallet, user_address)?;
+                        let user_address =
+                            self.parse_address(&wallet, &nickname_table, user_address)?;
 
                         {
                             let user_state = wallet
@@ -873,9 +861,7 @@ impl Command {
                                 .get_mut(&user_address)
                                 .expect("user address was not found in wallet");
 
-                            self.service
-                                .sync_sent_transaction(user_state, user_address)
-                                .await;
+                            sync_sent_transaction(&self.service, user_state, user_address).await;
 
                             self.backup_wallet(&wallet)?;
                         }
@@ -892,7 +878,8 @@ impl Command {
                         amount,
                         is_nft,
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address)?;
+                        let user_address =
+                            self.parse_address(&wallet, &nickname_table, user_address)?;
 
                         let receiver_address = if receiver_address.is_empty() {
                             anyhow::bail!("empty recipient");
@@ -904,10 +891,8 @@ impl Command {
                             }
 
                             Address::from_str(&receiver_address)?
-                        } else if let Some(receiver_address) = self
-                            .nickname_table
-                            .nickname_to_address
-                            .get(&receiver_address)
+                        } else if let Some(receiver_address) =
+                            nickname_table.nickname_to_address.get(&receiver_address)
                         {
                             *receiver_address
                         } else {
@@ -923,10 +908,8 @@ impl Command {
                                 anyhow::bail!("empty token address");
                             } else if contract_address.starts_with("0x") {
                                 Address::from_str(&contract_address)?
-                            } else if let Some(contract_address) = self
-                                .nickname_table
-                                .nickname_to_address
-                                .get(&contract_address)
+                            } else if let Some(contract_address) =
+                                nickname_table.nickname_to_address.get(&contract_address)
                             {
                                 *contract_address
                             } else {
@@ -993,7 +976,8 @@ impl Command {
                         csv_path,
                         // json
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address)?;
+                        let user_address =
+                            self.parse_address(&wallet, &nickname_table, user_address)?;
 
                         let file = File::open(csv_path)
                             .map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -1009,7 +993,8 @@ impl Command {
                         csv_path,
                         // json
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address)?;
+                        let user_address =
+                            self.parse_address(&wallet, &nickname_table, user_address)?;
 
                         let file = File::open(csv_path)
                             .map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -1029,15 +1014,14 @@ impl Command {
                 // }
                 BlockCommand::Sign { user_address } => {
                     println!("block sign");
-                    let user_address = self.parse_address(&wallet, user_address)?;
+                    let user_address =
+                        self.parse_address(&wallet, &nickname_table, user_address)?;
                     let user_state = wallet
                         .data
                         .get_mut(&user_address)
                         .expect("user address was not found in wallet");
 
-                    self.service
-                        .sign_proposed_block(user_state, user_address)
-                        .await;
+                    sign_proposed_block(&self.service, user_state, user_address).await;
 
                     self.backup_wallet(&wallet)?;
                 }
@@ -1045,7 +1029,7 @@ impl Command {
                 //     service.trigger_approve_block();
                 // }
                 BlockCommand::Verify { block_number } => {
-                    self.service.verify_block(block_number).await.unwrap();
+                    verify_block(&self.service, block_number).await.unwrap();
                 }
             },
         }

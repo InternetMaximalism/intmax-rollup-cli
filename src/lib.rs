@@ -33,13 +33,13 @@ mod tests {
     };
 
     use crate::{
-        service::Config,
+        service::*,
         utils::key_management::{memory::WalletOnMemory, types::Wallet},
     };
 
     #[tokio::test]
     async fn test_simple_scenario() -> reqwest::Result<()> {
-        let service = Config::new("http://localhost:8080");
+        let service = ServiceConfig::new("http://localhost:8080");
 
         let password = "password";
 
@@ -71,19 +71,19 @@ mod tests {
         ];
 
         // deposit のみの block を作成.
-        service
-            .deposit_assets(
-                sender1_account.address,
-                deposit_list
-                    .iter()
-                    .cloned()
-                    .map(|v| v.into())
-                    .collect::<Vec<_>>(),
-            )
-            .await
-            .unwrap();
-        service.trigger_propose_block().await;
-        let deposit_block = service.trigger_approve_block().await;
+        deposit_assets(
+            &service,
+            sender1_account.address,
+            deposit_list
+                .iter()
+                .cloned()
+                .map(|v| v.into())
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        trigger_propose_block(&service).await;
+        let deposit_block = trigger_approve_block(&service).await;
 
         let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             sender1_nodes_db.clone(),
@@ -217,26 +217,24 @@ mod tests {
 
         let sender1_user_asset_root = WrappedHashOut::default();
         let nonce = WrappedHashOut::rand();
-        let transaction = service
-            .send_assets(
-                sender1_account,
-                &merge_witnesses,
-                &purge_input_witness,
-                &purge_output_witness,
-                nonce,
-                sender1_user_asset_root,
-            )
-            .await;
+        let transaction = send_assets(
+            &service,
+            sender1_account,
+            &merge_witnesses,
+            &purge_input_witness,
+            &purge_output_witness,
+            nonce,
+            sender1_user_asset_root,
+        )
+        .await;
 
-        let new_world_state_root = service.trigger_propose_block().await;
+        let new_world_state_root = trigger_propose_block(&service).await;
 
-        let received_signature = service.sign_to_message(sender1_account, new_world_state_root);
+        let received_signature = sign_to_message(sender1_account, new_world_state_root);
 
-        service
-            .send_received_signature(received_signature, transaction.tx_hash)
-            .await;
+        send_received_signature(&service, received_signature, transaction.tx_hash).await;
 
-        service.trigger_approve_block().await;
+        trigger_approve_block(&service).await;
 
         Ok(())
     }
