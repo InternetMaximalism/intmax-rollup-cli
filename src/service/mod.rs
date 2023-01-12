@@ -52,6 +52,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::key_management::memory::UserState;
 
+mod airdrop;
+pub use airdrop::read_distribution_from_csv;
+
 const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
 type F = <C as GenericConfig<D>>::F;

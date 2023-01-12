@@ -1,7 +1,10 @@
-use intmax::controller::invoke_command;
+use intmax::controller::Command;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    invoke_command()?;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut command = Command::new();
+
+    command.invoke_command().await?;
 
     Ok(())
 }

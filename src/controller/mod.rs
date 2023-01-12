@@ -257,123 +257,39 @@ pub fn get_input(prompt: &str) -> String {
     input.trim().to_string()
 }
 
-pub fn invoke_command() -> anyhow::Result<()> {
-    let mut intmax_dir = dirs::home_dir().expect("fail to get home directory");
-    intmax_dir.push(".intmax");
+pub struct Command {
+    config_file_path: PathBuf,
+    wallet_dir_path: PathBuf,
+    wallet_file_path: PathBuf,
+    nickname_file_path: PathBuf,
+    nickname_table: NicknameTable,
+    service: Config,
+}
 
-    if File::open(intmax_dir.clone()).is_err() {
-        create_dir(intmax_dir.clone()).unwrap();
-        println!("make directory: {}", intmax_dir.to_string_lossy());
-    }
-
-    let mut config_file_path = intmax_dir.clone();
-    config_file_path.push("config");
-
-    let service = if let Ok(mut file) = File::open(config_file_path.clone()) {
-        let mut encoded_service = String::new();
-        file.read_to_string(&mut encoded_service)?;
-        serde_json::from_str(&encoded_service).unwrap()
-    } else {
-        Config::new(DEFAULT_AGGREGATOR_URL)
-    };
-
-    let mut wallet_dir_path = intmax_dir.clone();
-    let aggregator_url = service
-        .aggregator_api_url("")
-        .split("://")
-        .last()
-        .unwrap()
-        .to_string();
-    assert!(!aggregator_url.is_empty());
-    wallet_dir_path.push(aggregator_url);
-
-    let mut nickname_file_path = wallet_dir_path.clone();
-    nickname_file_path.push("nickname");
-
-    let mut nickname_table = if let Ok(mut file) = File::open(nickname_file_path.clone()) {
-        let mut encoded_nickname_table = String::new();
-        file.read_to_string(&mut encoded_nickname_table)?;
-        serde_json::from_str(&encoded_nickname_table).unwrap()
-    } else {
-        NicknameTable::default()
-    };
-
-    let mut wallet_file_path = wallet_dir_path.clone();
-    wallet_file_path.push("wallet");
-
-    let backup_wallet = |wallet: &WalletOnMemory| -> anyhow::Result<()> {
+impl Command {
+    fn backup_wallet(&self, wallet: &WalletOnMemory) -> anyhow::Result<()> {
         let encoded_wallet = serde_json::to_string(&wallet).unwrap();
-        std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-        let mut file = File::create(wallet_file_path.clone())?;
+        std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
+        let mut file = File::create(self.wallet_file_path.clone())?;
         write!(file, "{}", encoded_wallet)?;
         file.flush()?;
 
         Ok(())
-    };
-
-    let Cli { sub_command } = Cli::from_args();
-
-    let password = "password"; // unused
-    if let SubCommand::Account {
-        account_command: AccountCommand::Reset {},
-    } = sub_command
-    {
-        // 本当に実行しますか？
-        let response = get_input(
-            "This operation cannot be undone. Do you really want to reset the wallet? [y/N]",
-        );
-        if response.to_lowercase() != "y" {
-            println!("Wallet was not reset");
-
-            return Ok(());
-        }
-
-        let wallet = WalletOnMemory::new(password.to_string());
-
-        backup_wallet(&wallet)?;
-
-        println!("Wallet initialized");
-
-        return Ok(());
     }
 
-    let mut wallet = {
-        let result = File::open(wallet_file_path.clone()).and_then(|mut file| {
-            let mut encoded_wallet = String::new();
-            file.read_to_string(&mut encoded_wallet)?;
-            let wallet = serde_json::from_str(&encoded_wallet)?;
-
-            Ok(wallet)
-        });
-        if let Ok(wallet) = result {
-            wallet
-        } else {
-            let wallet = WalletOnMemory::new(password.to_string());
-
-            backup_wallet(&wallet)?;
-
-            println!("Wallet initialized");
-
-            wallet
-        }
-    };
-
-    if let SubCommand::Config { config_command: _ } = sub_command {
-        // nothing to do
-    } else {
-        check_compatibility_with_server(&service)?;
-    }
-
-    let parse_address = |wallet: &WalletOnMemory,
-                         //  nickname_table: &NicknameTable,
-                         user_address: Option<String>|
-     -> anyhow::Result<Address<F>> {
+    async fn parse_address(
+        &self,
+        wallet: &WalletOnMemory,
+        //  nickname_table: &NicknameTable,
+        user_address: Option<String>,
+    ) -> anyhow::Result<Address<F>> {
         if let Some(user_address) = user_address {
             let user_address = if user_address.is_empty() {
                 anyhow::bail!("empty user address");
             } else if user_address.starts_with("0x") {
                 Address::from_str(&user_address)?
-            } else if let Some(user_address) = nickname_table.nickname_to_address.get(&user_address)
+            } else if let Some(user_address) =
+                self.nickname_table.nickname_to_address.get(&user_address)
             {
                 *user_address
             } else {
@@ -386,33 +302,32 @@ pub fn invoke_command() -> anyhow::Result<()> {
         } else {
             anyhow::bail!("--user-address was not given");
         }
-    };
+    }
 
-    let set_nickname = |nickname_table: &mut NicknameTable,
-                        address: Address<F>,
-                        nickname: String|
-     -> anyhow::Result<()> {
+    async fn set_nickname(&mut self, address: Address<F>, nickname: String) -> anyhow::Result<()> {
         if nickname.starts_with("0x") {
             anyhow::bail!("nickname must not start with 0x");
         }
 
-        nickname_table.insert(address, nickname)?;
+        self.nickname_table.insert(address, nickname)?;
 
-        let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
-        std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-        let mut file = File::create(nickname_file_path.clone())?;
+        let encoded_nickname_table = serde_json::to_string(&self.nickname_table).unwrap();
+        std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
+        let mut file = File::create(self.nickname_file_path.clone())?;
         write!(file, "{}", encoded_nickname_table)?;
         file.flush()?;
 
         Ok(())
-    };
+    }
 
     // マージしていない差分が残り `num_unmerged` 個以下になるまでマージ処理を繰り返す.
     // 1 回のループで `N_MERGES` 個ずつ減っていく.
-    let merge = |wallet: &mut WalletOnMemory,
-                 user_address: Address<F>,
-                 num_unmerged: usize|
-     -> anyhow::Result<()> {
+    async fn merge(
+        &self,
+        wallet: &mut WalletOnMemory,
+        user_address: Address<F>,
+        num_unmerged: usize,
+    ) -> anyhow::Result<()> {
         loop {
             let user_state = wallet
                 .data
@@ -427,35 +342,42 @@ pub fn invoke_command() -> anyhow::Result<()> {
 
             // 前の行で break しなかった場合, `user_state.rest_received_assets.len()` は 0 でないので,
             // "nothing to do" のエラーはハンドルする必要がない.
-            service.merge_and_purge_asset(user_state, user_address, &[], false)?;
+            self.service
+                .merge_and_purge_asset(user_state, user_address, &[], false)
+                .await?;
 
-            backup_wallet(wallet)?;
+            self.backup_wallet(wallet)?;
 
-            service.trigger_propose_block();
-            service.trigger_approve_block();
+            self.service.trigger_propose_block().await;
+            self.service.trigger_approve_block().await;
         }
 
         Ok(())
-    };
+    }
 
-    let transfer = |wallet: &mut WalletOnMemory,
-                    user_address: Address<F>,
-                    purge_diffs: &[ContributedAsset<F>]|
-     -> anyhow::Result<()> {
+    async fn transfer(
+        &self,
+        wallet: &mut WalletOnMemory,
+        user_address: Address<F>,
+        purge_diffs: &[ContributedAsset<F>],
+    ) -> anyhow::Result<()> {
         {
             let user_state = wallet
                 .data
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            service.sync_sent_transaction(user_state, user_address);
+            self.service
+                .sync_sent_transaction(user_state, user_address)
+                .await;
 
-            backup_wallet(wallet)?;
+            self.backup_wallet(wallet)?;
         }
 
         // マージしていない差分が残り `N_MERGES` 個になるまでマージを繰り返す.
         // 残った差分は purge と一緒のトランザクションに含める.
-        merge(wallet, user_address, ROLLUP_CONSTANTS.n_merges)?;
+        self.merge(wallet, user_address, ROLLUP_CONSTANTS.n_merges)
+            .await?;
 
         {
             let user_state = wallet
@@ -463,7 +385,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            let result = service.merge_and_purge_asset(user_state, user_address, purge_diffs, true);
+            let result = self
+                .service
+                .merge_and_purge_asset(user_state, user_address, purge_diffs, true)
+                .await;
             match result {
                 Ok(_) => {}
                 Err(err) => {
@@ -476,10 +401,10 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 }
             }
 
-            backup_wallet(wallet)?;
+            self.backup_wallet(wallet)?;
         }
 
-        service.trigger_propose_block();
+        self.service.trigger_propose_block().await;
 
         {
             let user_state = wallet
@@ -487,21 +412,25 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .get_mut(&user_address)
                 .expect("user address was not found in wallet");
 
-            service.sign_proposed_block(user_state, user_address);
+            self.service
+                .sign_proposed_block(user_state, user_address)
+                .await;
 
-            backup_wallet(wallet)?;
+            self.backup_wallet(wallet)?;
         }
 
-        service.trigger_approve_block();
+        self.service.trigger_approve_block().await;
 
         Ok(())
-    };
+    }
 
-    let bulk_mint = |wallet: &mut WalletOnMemory,
-                     user_address: Address<F>,
-                     distribution_list: Vec<ContributedAsset<F>>,
-                     need_deposit: bool|
-     -> anyhow::Result<()> {
+    async fn bulk_mint(
+        &self,
+        wallet: &mut WalletOnMemory,
+        user_address: Address<F>,
+        distribution_list: Vec<ContributedAsset<F>>,
+        need_deposit: bool,
+    ) -> anyhow::Result<()> {
         // {
         //     let user_state = wallet
         //         .data
@@ -553,10 +482,12 @@ pub fn invoke_command() -> anyhow::Result<()> {
                 .iter_mut()
                 .for_each(|v| v.receiver_address = user_address);
 
-            service.deposit_assets(user_address, deposit_list)?;
+            self.service
+                .deposit_assets(user_address, deposit_list)
+                .await?;
 
-            service.trigger_propose_block();
-            service.trigger_approve_block();
+            self.service.trigger_propose_block().await;
+            self.service.trigger_approve_block().await;
         }
 
         let purge_diffs = distribution_list
@@ -564,425 +495,561 @@ pub fn invoke_command() -> anyhow::Result<()> {
             .filter(|v| v.receiver_address != user_address)
             .collect::<Vec<_>>();
 
-        transfer(wallet, user_address, &purge_diffs)?;
+        self.transfer(wallet, user_address, &purge_diffs).await?;
 
         Ok(())
-    };
-
-    match sub_command {
-        SubCommand::Config { config_command } => match config_command {
-            ConfigCommand::AggregatorUrl { aggregator_url } => {
-                service.set_aggregator_url(aggregator_url)?;
-
-                let encoded_service = serde_json::to_string(&service).unwrap();
-                let mut file = File::create(config_file_path)?;
-                write!(file, "{}", encoded_service)?;
-                file.flush()?;
-            }
-        },
-        SubCommand::Account { account_command } => match account_command {
-            AccountCommand::Reset {} => {}
-            AccountCommand::Add {
-                private_key,
-                nickname,
-                is_default,
-            } => {
-                let private_key = private_key
-                    // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
-                    .unwrap_or_else(WrappedHashOut::rand);
-                let account = Account::new(*private_key);
-                service.register_account(account.public_key);
-                wallet.add_account(account)?;
-
-                println!("new account added: {}", account.address);
-
-                if is_default {
-                    wallet.set_default_account(Some(account.address));
-                    println!("set the above account as default");
-                }
-
-                backup_wallet(&wallet)?;
-
-                if let Some(nickname) = nickname {
-                    set_nickname(&mut nickname_table, account.address, nickname.clone())?;
-                    println!("the above account appears replaced by {nickname}");
-                }
-
-                service.trigger_propose_block();
-                service.trigger_approve_block();
-            }
-            AccountCommand::List {} => {
-                let mut account_list = wallet.data.keys().collect::<Vec<_>>();
-                account_list.sort_by_key(|v| v.to_string());
-
-                let mut is_empty = true;
-                for address in account_list {
-                    is_empty = false;
-
-                    if Some(*address) == wallet.get_default_account() {
-                        if let Some(nickname) = nickname_table.address_to_nickname.get(address) {
-                            println!("{address} [{nickname}] (default)",);
-                        } else {
-                            println!("{address} (default)");
-                        }
-                    } else if let Some(nickname) = nickname_table.address_to_nickname.get(address) {
-                        println!("{address} [{nickname}]",);
-                    } else {
-                        println!("{address}");
-                    }
-                }
-
-                if is_empty {
-                    println!(
-                        "No accounts is in your wallet. Please execute `account add --default`."
-                    );
-                }
-            }
-            AccountCommand::SetDefault { user_address } => {
-                let account_list = wallet.data.keys().cloned().collect::<Vec<_>>();
-                if let Some(user_address) = user_address {
-                    let user_address = if user_address.is_empty() {
-                        anyhow::bail!("empty user address");
-                    } else if user_address.starts_with("0x") {
-                        Address::from_str(&user_address)?
-                    } else if let Some(user_address) =
-                        nickname_table.nickname_to_address.get(&user_address)
-                    {
-                        *user_address
-                    } else {
-                        anyhow::bail!("unregistered nickname");
-                    };
-
-                    if account_list.iter().any(|v| v == &user_address) {
-                        wallet.set_default_account(Some(user_address));
-                        println!("set default account: {}", user_address);
-                    } else {
-                        anyhow::bail!("given account does not exist in your wallet");
-                    }
-                } else {
-                    wallet.set_default_account(None);
-                    println!("set default account: null");
-                }
-
-                backup_wallet(&wallet)?;
-            }
-            AccountCommand::Export { .. } => {
-                anyhow::bail!("This is a deprecated feature.");
-            }
-            AccountCommand::Nickname { nickname_command } => match nickname_command {
-                NicknameCommand::Set { address, nickname } => {
-                    if address.len() != 66 {
-                        anyhow::bail!("address must be 32 bytes hex string with 0x-prefix");
-                    }
-                    let address = Address::from_str(&address)?;
-
-                    set_nickname(&mut nickname_table, address, nickname)?;
-
-                    println!("Done!");
-                }
-                NicknameCommand::Remove { nicknames } => {
-                    for nickname in nicknames {
-                        nickname_table.remove(nickname)?;
-                    }
-
-                    let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
-                    std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
-                    let mut file = File::create(nickname_file_path)?;
-                    write!(file, "{}", encoded_nickname_table)?;
-                    file.flush()?;
-
-                    println!("Done!");
-                }
-                NicknameCommand::List {} => {
-                    for (nickname, address) in nickname_table.nickname_to_address {
-                        println!("{nickname} = {address}");
-                    }
-                }
-            },
-            AccountCommand::PossessionProof { .. } => {
-                anyhow::bail!("This is a upcoming feature.");
-            }
-        },
-        SubCommand::Deposit {
-            user_address,
-            token_id: variable_index,
-            amount,
-            is_nft,
-        } => {
-            let user_address = parse_address(&wallet, user_address)?;
-            let _user_state = wallet
-                .data
-                .get(&user_address)
-                .expect("user address was not found in wallet");
-
-            // receiver_address と同じ contract_address をもつトークンしか mint できない
-            let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
-            let variable_index = if let Some(variable_index) = variable_index {
-                if is_nft && variable_index == 0u8.into() {
-                    anyhow::bail!(
-                        "it is recommended that the NFT token ID be something other than 0x00"
-                    );
-                }
-
-                variable_index
-            } else {
-                if is_nft {
-                    anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
-                }
-
-                0u8.into()
-            };
-            let amount = if let Some(amount) = amount {
-                if is_nft {
-                    println!("--nft flag was ignored because of --amount attribute");
-                }
-
-                amount
-            } else if is_nft {
-                1
-            } else {
-                anyhow::bail!("you cannot omit --amount attribute without --nft flag");
-            };
-
-            // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-            let deposit_info = ContributedAsset {
-                receiver_address: user_address,
-                kind: TokenKind {
-                    contract_address,
-                    variable_index,
-                },
-                amount,
-            };
-            service.deposit_assets(user_address, vec![deposit_info])?;
-
-            service.trigger_propose_block();
-            service.trigger_approve_block();
-        }
-        SubCommand::Assets {
-            user_address,
-            // verbose,
-        } => {
-            let user_address = parse_address(&wallet, user_address)?;
-            {
-                let user_state = wallet
-                    .data
-                    .get_mut(&user_address)
-                    .expect("user address was not found in wallet");
-
-                service.sync_sent_transaction(user_state, user_address);
-
-                backup_wallet(&wallet)?;
-            }
-
-            let user_state = wallet
-                .data
-                .get_mut(&user_address)
-                .expect("user address was not found in wallet");
-
-            // NOTICE: ここでの `user_state` の変更はファイルに保存しない.
-            calc_merge_witnesses(user_state, user_state.rest_received_assets.clone());
-
-            let total_amount_map = user_state.assets.calc_total_amount();
-
-            let separator = "--------------------------------------------------------------------------------------";
-            println!("User: {}", user_address);
-            println!("{}", separator);
-            if total_amount_map.is_empty() {
-                println!("  No assets held");
-                println!("{}", separator);
-            } else {
-                for ((contract_address, variable_index), total_amount) in total_amount_map {
-                    let decoded_contract_address = Address::from_str(&contract_address).unwrap();
-                    let contract_address = nickname_table
-                        .address_to_nickname
-                        .get(&decoded_contract_address)
-                        // .map(|nickname| format!("{nickname} ({contract_address})"))
-                        .unwrap_or(&contract_address);
-                    println!("  Token Address | {}", contract_address);
-                    println!("  Token ID      | {}", variable_index);
-                    println!("  Amount        | {}", total_amount);
-                    println!("{}", separator);
-                }
-            }
-
-            #[cfg(feature = "verbose")]
-            println!(
-                "raw data: {}",
-                serde_json::to_string(&user_state.assets).unwrap()
-            );
-        }
-        SubCommand::Transaction { tx_command } => {
-            match tx_command {
-                TransactionCommand::Merge { user_address } => {
-                    let user_address = parse_address(&wallet, user_address)?;
-
-                    {
-                        let user_state = wallet
-                            .data
-                            .get_mut(&user_address)
-                            .expect("user address was not found in wallet");
-
-                        service.sync_sent_transaction(user_state, user_address);
-
-                        backup_wallet(&wallet)?;
-                    }
-
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                    merge(&mut wallet, user_address, 0)?;
-                }
-                TransactionCommand::Send {
-                    user_address,
-                    receiver_address,
-                    contract_address,
-                    token_id: variable_index,
-                    amount,
-                    is_nft,
-                } => {
-                    let user_address = parse_address(&wallet, user_address)?;
-
-                    let receiver_address = if receiver_address.is_empty() {
-                        anyhow::bail!("empty recipient");
-                    } else if receiver_address.starts_with("0x") {
-                        if receiver_address.len() != 66 {
-                            anyhow::bail!("recipient must be 32 bytes hex string with 0x-prefix");
-                        }
-
-                        Address::from_str(&receiver_address)?
-                    } else if let Some(receiver_address) =
-                        nickname_table.nickname_to_address.get(&receiver_address)
-                    {
-                        *receiver_address
-                    } else {
-                        anyhow::bail!("unregistered nickname: recipient");
-                    };
-
-                    if user_address == receiver_address {
-                        anyhow::bail!("cannot send asset to myself");
-                    }
-
-                    let contract_address = if let Some(contract_address) = contract_address {
-                        if contract_address.is_empty() {
-                            anyhow::bail!("empty token address");
-                        } else if contract_address.starts_with("0x") {
-                            Address::from_str(&contract_address)?
-                        } else if let Some(contract_address) =
-                            nickname_table.nickname_to_address.get(&contract_address)
-                        {
-                            *contract_address
-                        } else {
-                            anyhow::bail!("unregistered nickname: token address");
-                        }
-                    } else {
-                        user_address
-                    };
-
-                    if user_address == receiver_address {
-                        anyhow::bail!("cannot send asset to myself");
-                    }
-
-                    let variable_index = if let Some(variable_index) = variable_index {
-                        if is_nft && variable_index == 0u8.into() {
-                            anyhow::bail!("it is recommended that the NFT token ID be something other than 0x00");
-                        }
-
-                        variable_index
-                    } else {
-                        if is_nft {
-                            anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
-                        }
-
-                        0u8.into()
-                    };
-                    let amount = if let Some(amount) = amount {
-                        if is_nft {
-                            println!("--nft flag was ignored because of --amount attribute");
-                        }
-
-                        amount
-                    } else if is_nft {
-                        1
-                    } else {
-                        anyhow::bail!("you cannot omit --amount attribute without --nft flag");
-                    };
-
-                    if amount == 0 || amount >= 1u64 << 56 {
-                        anyhow::bail!("`amount` must be a positive integer less than 2^56");
-                    }
-
-                    // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
-                    let output_asset = ContributedAsset {
-                        receiver_address,
-                        kind: TokenKind {
-                            contract_address,
-                            variable_index,
-                        },
-                        amount,
-                    };
-                    #[cfg(feature = "verbose")]
-                    dbg!(serde_json::to_string(&output_asset).unwrap());
-
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                    transfer(&mut wallet, user_address, &[output_asset])?;
-                }
-                TransactionCommand::BulkMint {
-                    user_address,
-                    csv_path,
-                    // json
-                } => {
-                    let user_address = parse_address(&wallet, user_address)?;
-
-                    let file =
-                        File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
-                    let json = read_distribution_from_csv(user_address, file)?;
-
-                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
-
-                    bulk_mint(&mut wallet, user_address, json, true)?;
-                }
-                TransactionCommand::BulkTransfer {
-                    user_address,
-                    csv_path,
-                    // json
-                } => {
-                    let user_address = parse_address(&wallet, user_address)?;
-
-                    let file =
-                        File::open(csv_path).map_err(|_| anyhow::anyhow!("file was not found"))?;
-                    let json = read_distribution_from_csv(user_address, file)?;
-
-                    bulk_mint(&mut wallet, user_address, json, false)?;
-                }
-                TransactionCommand::Swap { .. } => {
-                    anyhow::bail!("This is a upcoming feature.");
-                }
-            }
-        }
-        SubCommand::Block { block_command } => match block_command {
-            // BlockCommand::Propose {} => {
-            //     service.trigger_propose_block();
-            // }
-            BlockCommand::Sign { user_address } => {
-                println!("block sign");
-                let user_address = parse_address(&wallet, user_address)?;
-                let user_state = wallet
-                    .data
-                    .get_mut(&user_address)
-                    .expect("user address was not found in wallet");
-
-                service.sign_proposed_block(user_state, user_address);
-
-                backup_wallet(&wallet)?;
-            }
-            // BlockCommand::Approve {} => {
-            //     service.trigger_approve_block();
-            // }
-            BlockCommand::Verify { block_number } => {
-                service.verify_block(block_number).unwrap();
-            }
-        },
     }
 
-    Ok(())
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let mut intmax_dir = dirs::home_dir().expect("fail to get home directory");
+        intmax_dir.push(".intmax");
+
+        if File::open(intmax_dir.clone()).is_err() {
+            create_dir(intmax_dir.clone()).unwrap();
+            println!("make directory: {}", intmax_dir.to_string_lossy());
+        }
+
+        let mut config_file_path = intmax_dir.clone();
+        config_file_path.push("config");
+
+        let service = if let Ok(mut file) = File::open(config_file_path.clone()) {
+            let mut encoded_service = String::new();
+            file.read_to_string(&mut encoded_service).unwrap();
+            serde_json::from_str(&encoded_service).unwrap()
+        } else {
+            Config::new(DEFAULT_AGGREGATOR_URL)
+        };
+
+        let mut wallet_dir_path = intmax_dir.clone();
+        let aggregator_url = service
+            .aggregator_api_url("")
+            .split("://")
+            .last()
+            .unwrap()
+            .to_string();
+        assert!(!aggregator_url.is_empty());
+        wallet_dir_path.push(aggregator_url);
+
+        let mut nickname_file_path = wallet_dir_path.clone();
+        nickname_file_path.push("nickname");
+
+        let nickname_table = if let Ok(mut file) = File::open(nickname_file_path.clone()) {
+            let mut encoded_nickname_table = String::new();
+            file.read_to_string(&mut encoded_nickname_table).unwrap();
+            serde_json::from_str(&encoded_nickname_table).unwrap()
+        } else {
+            NicknameTable::default()
+        };
+
+        let mut wallet_file_path = wallet_dir_path.clone();
+        wallet_file_path.push("wallet");
+
+        Self {
+            config_file_path,
+            wallet_dir_path,
+            wallet_file_path,
+            nickname_file_path,
+            nickname_table,
+            service,
+        }
+    }
+
+    pub async fn invoke_command(&mut self) -> anyhow::Result<()> {
+        let Cli { sub_command } = Cli::from_args();
+
+        let password = "password"; // unused
+        if let SubCommand::Account {
+            account_command: AccountCommand::Reset {},
+        } = sub_command
+        {
+            // 本当に実行しますか？
+            let response = get_input(
+                "This operation cannot be undone. Do you really want to reset the wallet? [y/N]",
+            );
+            if response.to_lowercase() != "y" {
+                println!("Wallet was not reset");
+
+                return Ok(());
+            }
+
+            let wallet = WalletOnMemory::new(password.to_string());
+
+            self.backup_wallet(&wallet)?;
+
+            println!("Wallet initialized");
+
+            return Ok(());
+        }
+
+        let mut wallet = {
+            let result = File::open(self.wallet_file_path.clone()).and_then(|mut file| {
+                let mut encoded_wallet = String::new();
+                file.read_to_string(&mut encoded_wallet)?;
+                let wallet = serde_json::from_str(&encoded_wallet)?;
+
+                Ok(wallet)
+            });
+            if let Ok(wallet) = result {
+                wallet
+            } else {
+                let wallet = WalletOnMemory::new(password.to_string());
+
+                self.backup_wallet(&wallet)?;
+
+                println!("Wallet initialized");
+
+                wallet
+            }
+        };
+
+        if let SubCommand::Config { config_command: _ } = sub_command {
+            // nothing to do
+        } else {
+            check_compatibility_with_server(&self.service).await?;
+        }
+
+        match sub_command {
+            SubCommand::Config { config_command } => match config_command {
+                ConfigCommand::AggregatorUrl { aggregator_url } => {
+                    self.service.set_aggregator_url(aggregator_url).await?;
+
+                    let encoded_service = serde_json::to_string(&self.service).unwrap();
+                    let mut file = File::create(&self.config_file_path)?;
+                    write!(file, "{}", encoded_service)?;
+                    file.flush()?;
+                }
+            },
+            SubCommand::Account { account_command } => match account_command {
+                AccountCommand::Reset {} => {}
+                AccountCommand::Add {
+                    private_key,
+                    nickname,
+                    is_default,
+                } => {
+                    let private_key = private_key
+                        // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
+                        .unwrap_or_else(WrappedHashOut::rand);
+                    let account = Account::new(*private_key);
+                    self.service.register_account(account.public_key).await;
+                    wallet.add_account(account)?;
+
+                    println!("new account added: {}", account.address);
+
+                    if is_default {
+                        wallet.set_default_account(Some(account.address));
+                        println!("set the above account as default");
+                    }
+
+                    self.backup_wallet(&wallet)?;
+
+                    if let Some(nickname) = nickname {
+                        self.set_nickname(account.address, nickname.clone()).await?;
+                        println!("the above account appears replaced by {nickname}");
+                    }
+
+                    self.service.trigger_propose_block().await;
+                    self.service.trigger_approve_block().await;
+                }
+                AccountCommand::List {} => {
+                    let mut account_list = wallet.data.keys().collect::<Vec<_>>();
+                    account_list.sort_by_key(|v| v.to_string());
+
+                    let mut is_empty = true;
+                    for address in account_list {
+                        is_empty = false;
+
+                        if Some(*address) == wallet.get_default_account() {
+                            if let Some(nickname) =
+                                self.nickname_table.address_to_nickname.get(address)
+                            {
+                                println!("{address} [{nickname}] (default)",);
+                            } else {
+                                println!("{address} (default)");
+                            }
+                        } else if let Some(nickname) =
+                            self.nickname_table.address_to_nickname.get(address)
+                        {
+                            println!("{address} [{nickname}]",);
+                        } else {
+                            println!("{address}");
+                        }
+                    }
+
+                    if is_empty {
+                        println!(
+                        "No accounts is in your wallet. Please execute `account add --default`."
+                    );
+                    }
+                }
+                AccountCommand::SetDefault { user_address } => {
+                    let account_list = wallet.data.keys().cloned().collect::<Vec<_>>();
+                    if let Some(user_address) = user_address {
+                        let user_address = if user_address.is_empty() {
+                            anyhow::bail!("empty user address");
+                        } else if user_address.starts_with("0x") {
+                            Address::from_str(&user_address)?
+                        } else if let Some(user_address) =
+                            self.nickname_table.nickname_to_address.get(&user_address)
+                        {
+                            *user_address
+                        } else {
+                            anyhow::bail!("unregistered nickname");
+                        };
+
+                        if account_list.iter().any(|v| v == &user_address) {
+                            wallet.set_default_account(Some(user_address));
+                            println!("set default account: {}", user_address);
+                        } else {
+                            anyhow::bail!("given account does not exist in your wallet");
+                        }
+                    } else {
+                        wallet.set_default_account(None);
+                        println!("set default account: null");
+                    }
+
+                    self.backup_wallet(&wallet)?;
+                }
+                AccountCommand::Export { .. } => {
+                    anyhow::bail!("This is a deprecated feature.");
+                }
+                AccountCommand::Nickname { nickname_command } => match nickname_command {
+                    NicknameCommand::Set { address, nickname } => {
+                        if address.len() != 66 {
+                            anyhow::bail!("address must be 32 bytes hex string with 0x-prefix");
+                        }
+                        let address = Address::from_str(&address)?;
+
+                        self.set_nickname(address, nickname).await?;
+
+                        println!("Done!");
+                    }
+                    NicknameCommand::Remove { nicknames } => {
+                        for nickname in nicknames {
+                            self.nickname_table.remove(nickname)?;
+                        }
+
+                        let encoded_nickname_table =
+                            serde_json::to_string(&self.nickname_table).unwrap();
+                        std::fs::create_dir(self.wallet_dir_path.clone()).unwrap_or(());
+                        let mut file = File::create(self.nickname_file_path.clone())?;
+                        write!(file, "{}", encoded_nickname_table)?;
+                        file.flush()?;
+
+                        println!("Done!");
+                    }
+                    NicknameCommand::List {} => {
+                        for (nickname, address) in self.nickname_table.nickname_to_address.iter() {
+                            println!("{nickname} = {address}");
+                        }
+                    }
+                },
+                AccountCommand::PossessionProof { .. } => {
+                    anyhow::bail!("This is a upcoming feature.");
+                }
+            },
+            SubCommand::Deposit {
+                user_address,
+                token_id: variable_index,
+                amount,
+                is_nft,
+            } => {
+                let user_address = self.parse_address(&wallet, user_address).await?;
+                let _user_state = wallet
+                    .data
+                    .get(&user_address)
+                    .expect("user address was not found in wallet");
+
+                // receiver_address と同じ contract_address をもつトークンしか mint できない
+                let contract_address = user_address; // serde_json::from_str(&contract_address).unwrap()
+                let variable_index = if let Some(variable_index) = variable_index {
+                    if is_nft && variable_index == 0u8.into() {
+                        anyhow::bail!(
+                            "it is recommended that the NFT token ID be something other than 0x00"
+                        );
+                    }
+
+                    variable_index
+                } else {
+                    if is_nft {
+                        anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
+                    }
+
+                    0u8.into()
+                };
+                let amount = if let Some(amount) = amount {
+                    if is_nft {
+                        println!("--nft flag was ignored because of --amount attribute");
+                    }
+
+                    amount
+                } else if is_nft {
+                    1
+                } else {
+                    anyhow::bail!("you cannot omit --amount attribute without --nft flag");
+                };
+
+                // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                let deposit_info = ContributedAsset {
+                    receiver_address: user_address,
+                    kind: TokenKind {
+                        contract_address,
+                        variable_index,
+                    },
+                    amount,
+                };
+                self.service
+                    .deposit_assets(user_address, vec![deposit_info])
+                    .await?;
+
+                self.service.trigger_propose_block().await;
+                self.service.trigger_approve_block().await;
+            }
+            SubCommand::Assets {
+                user_address,
+                // verbose,
+            } => {
+                let user_address = self.parse_address(&wallet, user_address).await?;
+                {
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    self.service
+                        .sync_sent_transaction(user_state, user_address)
+                        .await;
+
+                    self.backup_wallet(&wallet)?;
+                }
+
+                let user_state = wallet
+                    .data
+                    .get_mut(&user_address)
+                    .expect("user address was not found in wallet");
+
+                // NOTICE: ここでの `user_state` の変更はファイルに保存しない.
+                calc_merge_witnesses(user_state, user_state.rest_received_assets.clone());
+
+                let total_amount_map = user_state.assets.calc_total_amount();
+
+                let separator = "--------------------------------------------------------------------------------------";
+                println!("User: {}", user_address);
+                println!("{}", separator);
+                if total_amount_map.is_empty() {
+                    println!("  No assets held");
+                    println!("{}", separator);
+                } else {
+                    for ((contract_address, variable_index), total_amount) in total_amount_map {
+                        let decoded_contract_address =
+                            Address::from_str(&contract_address).unwrap();
+                        let contract_address = self
+                            .nickname_table
+                            .address_to_nickname
+                            .get(&decoded_contract_address)
+                            // .map(|nickname| format!("{nickname} ({contract_address})"))
+                            .unwrap_or(&contract_address);
+                        println!("  Token Address | {}", contract_address);
+                        println!("  Token ID      | {}", variable_index);
+                        println!("  Amount        | {}", total_amount);
+                        println!("{}", separator);
+                    }
+                }
+
+                #[cfg(feature = "verbose")]
+                println!(
+                    "raw data: {}",
+                    serde_json::to_string(&user_state.assets).unwrap()
+                );
+            }
+            SubCommand::Transaction { tx_command } => {
+                match tx_command {
+                    TransactionCommand::Merge { user_address } => {
+                        let user_address = self.parse_address(&wallet, user_address).await?;
+
+                        {
+                            let user_state = wallet
+                                .data
+                                .get_mut(&user_address)
+                                .expect("user address was not found in wallet");
+
+                            self.service
+                                .sync_sent_transaction(user_state, user_address)
+                                .await;
+
+                            self.backup_wallet(&wallet)?;
+                        }
+
+                        ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                        self.merge(&mut wallet, user_address, 0).await?;
+                    }
+                    TransactionCommand::Send {
+                        user_address,
+                        receiver_address,
+                        contract_address,
+                        token_id: variable_index,
+                        amount,
+                        is_nft,
+                    } => {
+                        let user_address = self.parse_address(&wallet, user_address).await?;
+
+                        let receiver_address = if receiver_address.is_empty() {
+                            anyhow::bail!("empty recipient");
+                        } else if receiver_address.starts_with("0x") {
+                            if receiver_address.len() != 66 {
+                                anyhow::bail!(
+                                    "recipient must be 32 bytes hex string with 0x-prefix"
+                                );
+                            }
+
+                            Address::from_str(&receiver_address)?
+                        } else if let Some(receiver_address) = self
+                            .nickname_table
+                            .nickname_to_address
+                            .get(&receiver_address)
+                        {
+                            *receiver_address
+                        } else {
+                            anyhow::bail!("unregistered nickname: recipient");
+                        };
+
+                        if user_address == receiver_address {
+                            anyhow::bail!("cannot send asset to myself");
+                        }
+
+                        let contract_address = if let Some(contract_address) = contract_address {
+                            if contract_address.is_empty() {
+                                anyhow::bail!("empty token address");
+                            } else if contract_address.starts_with("0x") {
+                                Address::from_str(&contract_address)?
+                            } else if let Some(contract_address) = self
+                                .nickname_table
+                                .nickname_to_address
+                                .get(&contract_address)
+                            {
+                                *contract_address
+                            } else {
+                                anyhow::bail!("unregistered nickname: token address");
+                            }
+                        } else {
+                            user_address
+                        };
+
+                        if user_address == receiver_address {
+                            anyhow::bail!("cannot send asset to myself");
+                        }
+
+                        let variable_index = if let Some(variable_index) = variable_index {
+                            if is_nft && variable_index == 0u8.into() {
+                                anyhow::bail!("it is recommended that the NFT token ID be something other than 0x00");
+                            }
+
+                            variable_index
+                        } else {
+                            if is_nft {
+                                anyhow::bail!(
+                                    "you cannot omit --token-id attribute with --nft flag"
+                                );
+                            }
+
+                            0u8.into()
+                        };
+                        let amount = if let Some(amount) = amount {
+                            if is_nft {
+                                println!("--nft flag was ignored because of --amount attribute");
+                            }
+
+                            amount
+                        } else if is_nft {
+                            1
+                        } else {
+                            anyhow::bail!("you cannot omit --amount attribute without --nft flag");
+                        };
+
+                        if amount == 0 || amount >= 1u64 << 56 {
+                            anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                        }
+
+                        // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                        let output_asset = ContributedAsset {
+                            receiver_address,
+                            kind: TokenKind {
+                                contract_address,
+                                variable_index,
+                            },
+                            amount,
+                        };
+                        #[cfg(feature = "verbose")]
+                        dbg!(serde_json::to_string(&output_asset).unwrap());
+
+                        ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                        self.transfer(&mut wallet, user_address, &[output_asset])
+                            .await?;
+                    }
+                    TransactionCommand::BulkMint {
+                        user_address,
+                        csv_path,
+                        // json
+                    } => {
+                        let user_address = self.parse_address(&wallet, user_address).await?;
+
+                        let file = File::open(csv_path)
+                            .map_err(|_| anyhow::anyhow!("file was not found"))?;
+                        let json = read_distribution_from_csv(user_address, file)?;
+
+                        ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                        self.bulk_mint(&mut wallet, user_address, json, true)
+                            .await?;
+                    }
+                    TransactionCommand::BulkTransfer {
+                        user_address,
+                        csv_path,
+                        // json
+                    } => {
+                        let user_address = self.parse_address(&wallet, user_address).await?;
+
+                        let file = File::open(csv_path)
+                            .map_err(|_| anyhow::anyhow!("file was not found"))?;
+                        let json = read_distribution_from_csv(user_address, file)?;
+
+                        self.bulk_mint(&mut wallet, user_address, json, false)
+                            .await?;
+                    }
+                    TransactionCommand::Swap { .. } => {
+                        anyhow::bail!("This is a upcoming feature.");
+                    }
+                }
+            }
+            SubCommand::Block { block_command } => match block_command {
+                // BlockCommand::Propose {} => {
+                //     service.trigger_propose_block();
+                // }
+                BlockCommand::Sign { user_address } => {
+                    println!("block sign");
+                    let user_address = self.parse_address(&wallet, user_address).await?;
+                    let user_state = wallet
+                        .data
+                        .get_mut(&user_address)
+                        .expect("user address was not found in wallet");
+
+                    self.service
+                        .sign_proposed_block(user_state, user_address)
+                        .await;
+
+                    self.backup_wallet(&wallet)?;
+                }
+                // BlockCommand::Approve {} => {
+                //     service.trigger_approve_block();
+                // }
+                BlockCommand::Verify { block_number } => {
+                    self.service.verify_block(block_number).await.unwrap();
+                }
+            },
+        }
+
+        Ok(())
+    }
 }

@@ -37,8 +37,8 @@ mod tests {
         utils::key_management::{memory::WalletOnMemory, types::Wallet},
     };
 
-    #[test]
-    fn test_simple_scenario() -> reqwest::Result<()> {
+    #[tokio::test]
+    async fn test_simple_scenario() -> reqwest::Result<()> {
         let service = Config::new("http://localhost:8080");
 
         let password = "password";
@@ -80,9 +80,10 @@ mod tests {
                     .map(|v| v.into())
                     .collect::<Vec<_>>(),
             )
+            .await
             .unwrap();
-        service.trigger_propose_block();
-        let deposit_block = service.trigger_approve_block();
+        service.trigger_propose_block().await;
+        let deposit_block = service.trigger_approve_block().await;
 
         let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             sender1_nodes_db.clone(),
@@ -216,22 +217,26 @@ mod tests {
 
         let sender1_user_asset_root = WrappedHashOut::default();
         let nonce = WrappedHashOut::rand();
-        let transaction = service.send_assets(
-            sender1_account,
-            &merge_witnesses,
-            &purge_input_witness,
-            &purge_output_witness,
-            nonce,
-            sender1_user_asset_root,
-        );
+        let transaction = service
+            .send_assets(
+                sender1_account,
+                &merge_witnesses,
+                &purge_input_witness,
+                &purge_output_witness,
+                nonce,
+                sender1_user_asset_root,
+            )
+            .await;
 
-        let new_world_state_root = service.trigger_propose_block();
+        let new_world_state_root = service.trigger_propose_block().await;
 
         let received_signature = service.sign_to_message(sender1_account, new_world_state_root);
 
-        service.send_received_signature(received_signature, transaction.tx_hash);
+        service
+            .send_received_signature(received_signature, transaction.tx_hash)
+            .await;
 
-        service.trigger_approve_block();
+        service.trigger_approve_block().await;
 
         Ok(())
     }
