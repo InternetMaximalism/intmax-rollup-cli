@@ -277,7 +277,7 @@ impl Command {
         Ok(())
     }
 
-    async fn parse_address(
+    fn parse_address(
         &self,
         wallet: &WalletOnMemory,
         //  nickname_table: &NicknameTable,
@@ -304,7 +304,7 @@ impl Command {
         }
     }
 
-    async fn set_nickname(&mut self, address: Address<F>, nickname: String) -> anyhow::Result<()> {
+    fn set_nickname(&mut self, address: Address<F>, nickname: String) -> anyhow::Result<()> {
         if nickname.starts_with("0x") {
             anyhow::bail!("nickname must not start with 0x");
         }
@@ -644,7 +644,7 @@ impl Command {
                     self.backup_wallet(&wallet)?;
 
                     if let Some(nickname) = nickname {
-                        self.set_nickname(account.address, nickname.clone()).await?;
+                        self.set_nickname(account.address, nickname.clone())?;
                         println!("the above account appears replaced by {nickname}");
                     }
 
@@ -720,7 +720,7 @@ impl Command {
                         }
                         let address = Address::from_str(&address)?;
 
-                        self.set_nickname(address, nickname).await?;
+                        self.set_nickname(address, nickname)?;
 
                         println!("Done!");
                     }
@@ -754,7 +754,7 @@ impl Command {
                 amount,
                 is_nft,
             } => {
-                let user_address = self.parse_address(&wallet, user_address).await?;
+                let user_address = self.parse_address(&wallet, user_address)?;
                 let _user_state = wallet
                     .data
                     .get(&user_address)
@@ -809,7 +809,7 @@ impl Command {
                 user_address,
                 // verbose,
             } => {
-                let user_address = self.parse_address(&wallet, user_address).await?;
+                let user_address = self.parse_address(&wallet, user_address)?;
                 {
                     let user_state = wallet
                         .data
@@ -865,7 +865,7 @@ impl Command {
             SubCommand::Transaction { tx_command } => {
                 match tx_command {
                     TransactionCommand::Merge { user_address } => {
-                        let user_address = self.parse_address(&wallet, user_address).await?;
+                        let user_address = self.parse_address(&wallet, user_address)?;
 
                         {
                             let user_state = wallet
@@ -892,7 +892,7 @@ impl Command {
                         amount,
                         is_nft,
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address).await?;
+                        let user_address = self.parse_address(&wallet, user_address)?;
 
                         let receiver_address = if receiver_address.is_empty() {
                             anyhow::bail!("empty recipient");
@@ -993,7 +993,7 @@ impl Command {
                         csv_path,
                         // json
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address).await?;
+                        let user_address = self.parse_address(&wallet, user_address)?;
 
                         let file = File::open(csv_path)
                             .map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -1009,7 +1009,7 @@ impl Command {
                         csv_path,
                         // json
                     } => {
-                        let user_address = self.parse_address(&wallet, user_address).await?;
+                        let user_address = self.parse_address(&wallet, user_address)?;
 
                         let file = File::open(csv_path)
                             .map_err(|_| anyhow::anyhow!("file was not found"))?;
@@ -1029,7 +1029,7 @@ impl Command {
                 // }
                 BlockCommand::Sign { user_address } => {
                     println!("block sign");
-                    let user_address = self.parse_address(&wallet, user_address).await?;
+                    let user_address = self.parse_address(&wallet, user_address)?;
                     let user_state = wallet
                         .data
                         .get_mut(&user_address)
