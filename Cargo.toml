@@ -5,19 +5,22 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-ctrlc = "3.2"
+ctrlc = { version = "3.2", optional = true }
 dirs = "4.0"
 hex = "0.4"
 intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "dac04837290b2e565331f72fc06b00fda4f326a5" }
 num-bigint = "0.4"
 regex = "1"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+reqwest = { version = "0.11", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 structopt = "0.3"
 tokio = { version = "1.21", features = ["macros"] }
 
 [features]
-default = ["parallel"]
+default = ["parallel", "dep:ctrlc", "tokio/rt-multi-thread"]
 verbose = []
 parallel = ["intmax-rollup-interface/parallel"]
+wasm = []
+
+[lib]

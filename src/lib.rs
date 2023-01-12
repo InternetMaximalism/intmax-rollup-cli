@@ -1,3 +1,4 @@
+#[cfg(not(feature = "wasm"))]
 pub mod controller;
 pub mod service;
 pub mod utils;
