@@ -7,7 +7,7 @@ ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commi
 For Ubuntu: [Install Guide (Ubuntu)](./docs/for_ubuntu.md)
 
 ```sh
-git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git -b staging
+git clone https://github.com/InternetMaximalism/intmax-rollup-cli.git
 cd intmax-rollup-cli
 cargo --version # 1.65.0-nightly
 cargo build --release
