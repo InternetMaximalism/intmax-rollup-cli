@@ -6,16 +6,27 @@ ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commi
 
 For Ubuntu: [Install Guide (Ubuntu)](./docs/for_ubuntu.md)
 
+### Clone this repository
+
 ```sh
 # use SSH
 git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git -b staging
 # or use HTTPS
 git clone https://github.com/InternetMaximalism/intmax-rollup-cli.git -b staging
 cd intmax-rollup-cli
-cargo --version # 1.65.0-nightly
-cargo build --release
-alias intmax='./target/release/intmax'
-intmax config aggregator-url https://prealpha.testnet.intmax.io/
+```
+
+### Build this CLI
+
+```sh
+cargo --version # 1.67.0-nightly
+cargo run --release --bin intmax config aggregator-url https://alpha.testnet.intmax.io/
+```
+
+### Alias intmax command
+
+```sh
+alias intmax="$(pwd)/target/release/intmax"
 ```
 
 ## Update
@@ -41,16 +52,11 @@ intmax -h
 
 ### Create your account
 
-Initializing your wallet and delete your all accounts.
-
-```sh
-intmax account reset
-```
-
 Add default account (private key is selected randomly).
 
 ```sh
-intmax account add --default
+intmax account add --default --nickname alice
+intmax account add --nickname bob
 ```
 
 ### Mint your token
@@ -58,7 +64,7 @@ intmax account add --default
 Mint your token. The token address is the same with your address and the token id can be selected from 0x00 to 0xff.
 
 ```sh
-intmax deposit --amount 10 -i 0x00
+intmax tx mint --amount 10 -i 0x00
 ```
 
 ### Send your assets
@@ -66,7 +72,7 @@ intmax deposit --amount 10 -i 0x00
 Merge your assets and Send your token to other accounts.
 
 ```sh
-intmax tx send --amount 1 -i 0x00 --receiver-address 0x714bdc6f38947e6da5ee9596c50b2e06e4e01c8885f98cf29d9c2f656eb3b45d
+intmax tx send --amount 1 -i 0x00 --receiver-address bob
 ```
 
 ### Display your assets
@@ -74,7 +80,7 @@ intmax tx send --amount 1 -i 0x00 --receiver-address 0x714bdc6f38947e6da5ee9596c
 Display your owned assets.
 
 ```sh
-intmax assets
+intmax account assets
 ```
 
 ### Bulk-mint
@@ -93,6 +99,171 @@ The number of this aggregation is limited to 8 tokens in the testnet, and will b
 ```sh
 intmax tx bulk-mint -f ./tests/airdrop/example2.csv
 intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
+```
+
+## Interoperability
+
+Please note that the following feature is currently in the **experimental** stage
+and is intended to provide guidance for contract development.
+Please be aware that at this time, we cannot guarantee the safe interoperability using this feature.
+
+### Write private key
+
+First, write the private key to the .env file.
+In order to execute the commands that follow,
+the account must have ETH deposited on Scroll alpha.
+
+```sh
+cp -n example.env .env
+```
+
+### Creating Another Account
+
+To create another account with a nickname "carol", use the following command:
+
+```sh
+intmax account add --nickname carol
+```
+
+After executing this command, you will see a message that confirms that the account has been successfully created.
+The message will contain a unique account address that is different every time the command is run.
+
+```txt
+new account added: 0xa27c8370eeddc4fe
+```
+
+### Making an Offer
+
+To make an offer, you need tokens into your account.
+If there is not a sufficient balance, use the following command to mint tokens:
+
+```sh
+intmax account set-default bob
+intmax tx mint --amount 10 -i 0x00
+```
+
+Once you have deposited tokens into your account,
+you can create an offer by using the following command:
+
+```sh
+intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-amount 1000000000000000
+```
+
+Instead of sending 10 tokens of your own issue to the account created here,
+make an offer requesting 0.001 ETH (= 10^15 wei) on the Scroll alpha testnet.
+The `--receiver-address` field in this command should contain the recipient's address as it appears on your screen.
+After executing this command, you will see a message that displays the offer ID.
+
+```txt
+start register()
+end register()
+offer_id: 0
+WARNING: DO NOT interrupt execution of this program while a transaction is being sent.
+start proving: user_tx_proof
+prove: 4.614 sec
+transaction hash is 0x8ae9fcd8825815dc21d9fad1841bfcc1375fb7727268f7dffc41952da47dc32d
+broadcast transaction successfully
+start proving: received_signature
+prove: 0.028 sec
+send received signature successfully
+```
+
+Make a note of this ID, as you will need it to activate the offer later.
+
+### Switching to the Recipient's Address
+
+Next, switch to the recipient's address.
+
+```sh
+intmax account set-default carol
+```
+
+### Activating the Offer
+
+If the recipient accepts the offer, use the following command:
+
+```sh
+intmax io activate <offer-id> --network scroll -u carol
+```
+
+When the recipient accepts the offer,
+ETH will be transferred on the Scroll alpha testnet at this time.
+Therefore, it is necessary to deposit ETH in advance.
+
+After activating the offer, use the following command to check your assets:
+
+```sh
+intmax account assets
+```
+
+You will see a message that displays the amount of tokens that you currently own.
+
+```txt
+User: carol
+--------------------------------------------------------------------------------------
+  Token Address | [alice]
+  Token ID      | 0x00
+  Amount        | 1
+--------------------------------------------------------------------------------------
+```
+
+### Another Pattern
+
+To create another account with a nickname "dave", use the following command:
+
+```sh
+intmax account add --nickname dave
+```
+
+Once you have deposited tokens into your account,
+you can create an offer by using the following command:
+
+```sh
+intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000 -u carol
+```
+
+In this command, the `--receiver` field should contain the recipient's address in Ethereum format,
+and the `--receiver-address` field should contain the recipient's address or nickname.
+When you make an offer,
+ETH will be transferred on the Scroll alpha testnet at this time.
+Therefore, it is necessary to deposit ETH in advance.
+After executing this command, you will see a message that displays the offer ID.
+
+```txt
+start lock()
+end lock()
+offer_id: 5
+```
+
+Next, switch to the recipient's address and mint your token.
+
+```sh
+intmax tx mint --amount 10 -i 0x00 -u dave
+```
+
+### Activating the Offer
+
+To activate the offer, use the following command:
+
+```sh
+intmax io unlock <offer-id> --network scroll -u dave
+```
+
+After activating the offer, use the following command to check your assets:
+
+```sh
+intmax account assets -u carol
+```
+
+You will see a message that displays the amount of tokens that you currently own.
+
+```txt
+User: carol
+--------------------------------------------------------------------------------------
+  Token Address | dave
+  Token ID      | 0x00
+  Amount        | 1
+--------------------------------------------------------------------------------------
 ```
 
 ## How to Use

@@ -1,4 +1,9 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 use intmax_rollup_interface::intmax_zkp_core::{
     plonky2::field::goldilocks_field::GoldilocksField,
@@ -133,6 +138,7 @@ impl Serialize for UserState<NodeDataMemory, RootDataMemory> {
 pub struct WalletOnMemory {
     pub data: HashMap<Address<F>, UserState<NodeDataMemory, RootDataMemory>>,
     pub default_account: Option<Address<F>>,
+    pub wallet_file_path: PathBuf,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,42 +148,42 @@ pub struct SerializableWalletOnMemory {
     pub default_account: Option<Address<F>>,
 }
 
-impl From<SerializableWalletOnMemory> for WalletOnMemory {
-    fn from(value: SerializableWalletOnMemory) -> Self {
+impl WalletOnMemory {
+    pub fn read_from_file(wallet_file_path: PathBuf) -> anyhow::Result<Self> {
+        let mut file = File::open(wallet_file_path.clone())?;
+        let mut encoded_wallet = String::new();
+        file.read_to_string(&mut encoded_wallet)?;
+        let raw: SerializableWalletOnMemory = serde_json::from_str(&encoded_wallet)?;
+
         let mut result = HashMap::new();
-        for value in value.data.into_iter() {
+        for value in raw.data.into_iter() {
             result.insert(value.account.address, value);
         }
 
-        Self {
+        Ok(Self {
             data: result,
-            default_account: value.default_account,
-        }
+            default_account: raw.default_account,
+            wallet_file_path,
+        })
     }
 }
 
-impl<'de> Deserialize<'de> for WalletOnMemory {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = SerializableWalletOnMemory::deserialize(deserializer)?;
+impl WalletOnMemory {
+    pub fn backup(&self) -> anyhow::Result<()> {
+        let raw = SerializableWalletOnMemory {
+            data: self.data.values().cloned().collect::<Vec<_>>(),
+            default_account: self.default_account,
+        };
 
-        Ok(raw.into())
-    }
-}
+        let mut wallet_dir_path = self.wallet_file_path.clone();
+        wallet_dir_path.pop();
+        let encoded_wallet = serde_json::to_string(&raw).unwrap();
+        std::fs::create_dir(wallet_dir_path.clone()).unwrap_or(());
+        let mut file = File::create(self.wallet_file_path.clone())?;
+        write!(file, "{}", encoded_wallet)?;
+        file.flush()?;
 
-impl From<WalletOnMemory> for SerializableWalletOnMemory {
-    fn from(value: WalletOnMemory) -> Self {
-        Self {
-            data: value.data.values().cloned().collect::<Vec<_>>(),
-            default_account: value.default_account,
-        }
-    }
-}
-
-impl Serialize for WalletOnMemory {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = SerializableWalletOnMemory::from(self.clone());
-
-        raw.serialize(serializer)
+        Ok(())
     }
 }
 
@@ -186,10 +192,11 @@ impl Wallet for WalletOnMemory {
     type Account = Account<F>;
     type Error = anyhow::Error;
 
-    fn new(_password: String) -> Self {
+    fn new(wallet_file_path: PathBuf, _password: String) -> Self {
         Self {
             data: HashMap::new(),
             default_account: None,
+            wallet_file_path,
         }
     }
 
