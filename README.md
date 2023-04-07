@@ -103,6 +103,10 @@ intmax tx bulk-transfer -f ./tests/airdrop/example3.csv
 
 ## Interoperability
 
+Please note that the following feature is currently in the **experimental** stage
+and is intended to provide guidance for contract development.
+Please be aware that at this time, we cannot guarantee the safe interoperability using this feature.
+
 ### Write private key
 
 First, write the private key to the .env file.
@@ -179,7 +183,7 @@ intmax account set-default carol
 If the recipient accepts the offer, use the following command:
 
 ```sh
-intmax io activate <offer-id> --network scroll
+intmax io activate <offer-id> --network scroll -u carol
 ```
 
 When the recipient accepts the offer,
@@ -215,8 +219,7 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax account set-default carol
-intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000
+intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000 -u carol
 ```
 
 In this command, the `--receiver` field should contain the recipient's address in Ethereum format,
@@ -235,8 +238,7 @@ offer_id: 5
 Next, switch to the recipient's address and mint your token.
 
 ```sh
-intmax account set-default dave
-intmax tx mint --amount 10 -i 0x00
+intmax tx mint --amount 10 -i 0x00 -u dave
 ```
 
 ### Activating the Offer
@@ -244,14 +246,13 @@ intmax tx mint --amount 10 -i 0x00
 To activate the offer, use the following command:
 
 ```sh
-intmax io unlock <offer-id> --network scroll
+intmax io unlock <offer-id> --network scroll -u dave
 ```
 
 After activating the offer, use the following command to check your assets:
 
 ```sh
-intmax account set-default carol
-intmax account assets
+intmax account assets -u carol
 ```
 
 You will see a message that displays the amount of tokens that you currently own.

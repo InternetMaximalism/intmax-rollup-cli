@@ -1874,7 +1874,7 @@ dependencies = [
 [[package]]
 name = "intmax-interoperability-plugin"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-interoperability-plugin?rev=98c12c6#98c12c6080f1cf25548cebecec14c9e37c76a723"
+source = "git+https://github.com/InternetMaximalism/intmax-interoperability-plugin?rev=dbc5d29#dbc5d29cd1b10439a2b185f9bcc8df3a0be0cc98"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1892,7 +1892,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
-source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=22a2ed7#22a2ed7ec7f979faf076320b9aa109dcece03f34"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=5320f79#5320f791700a21731220232ded70fd2b4957a357"
 dependencies = [
  "hex",
  "intmax-zkp-core",
