@@ -1,0 +1,15 @@
+{
+  "name": "intmax-simple-auction",
+  "version": "0.1.0",
+  "devDependencies": {
+    "@intmax/interoperability-contracts": "../../intmax-interoperability-plugin/contracts",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@openzeppelin/contracts": "^4.8.2",
+    "@openzeppelin/contracts-upgradeable": "^4.8.2",
+    "@openzeppelin/hardhat-upgrades": "^1.22.1",
+    "hardhat": "^2.13.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3"
+  }
+}

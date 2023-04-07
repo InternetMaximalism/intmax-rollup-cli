@@ -2,6 +2,8 @@ pub mod controller;
 pub mod service;
 pub mod utils;
 
+pub extern crate intmax_rollup_interface;
+
 #[cfg(test)]
 mod tests {
     const D: usize = 2;
@@ -14,7 +16,7 @@ mod tests {
         intmax_zkp_core::{
             merkle_tree::tree::get_merkle_proof,
             plonky2::{
-                field::types::Field,
+                field::{goldilocks_field::GoldilocksField, types::Field},
                 hash::{hash_types::HashOut, poseidon::PoseidonHash},
                 plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
             },
@@ -33,17 +35,17 @@ mod tests {
     };
 
     use crate::{
-        service::Config,
+        service::builder::*,
         utils::key_management::{memory::WalletOnMemory, types::Wallet},
     };
 
-    #[test]
-    fn test_simple_scenario() -> reqwest::Result<()> {
-        let service = Config::new("http://localhost:8080");
+    #[tokio::test]
+    async fn test_simple_scenario() -> reqwest::Result<()> {
+        let service = ServiceBuilder::new("http://localhost:8080");
 
         let password = "password";
 
-        let mut wallet = WalletOnMemory::new(password.to_string());
+        let mut wallet = WalletOnMemory::new("".into(), password.to_string());
 
         let sender1_account = Account::<F>::rand();
 
@@ -58,7 +60,7 @@ mod tests {
         let deposit_list = vec![
             DepositInfo {
                 receiver_address: sender1_account.address,
-                contract_address: Address(*GoldilocksHashOut::from_u128(1)),
+                contract_address: Address(GoldilocksField::from_canonical_u64(1)),
                 variable_index: 0u8.into(),
                 amount: F::from_canonical_u64(10),
             },
@@ -70,7 +72,6 @@ mod tests {
             // },
         ];
 
-        // deposit のみの block を作成.
         service
             .deposit_assets(
                 sender1_account.address,
@@ -80,9 +81,10 @@ mod tests {
                     .map(|v| v.into())
                     .collect::<Vec<_>>(),
             )
+            .await
             .unwrap();
-        service.trigger_propose_block();
-        let deposit_block = service.trigger_approve_block();
+        service.trigger_propose_block().await;
+        let deposit_block = service.trigger_approve_block().await;
 
         let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             sender1_nodes_db.clone(),
@@ -110,7 +112,7 @@ mod tests {
             .find(&sender1_account.address.to_hash_out().into())
             .unwrap();
 
-        // pseudo tx hash. 他の merge と proof の形式を合わせるために必要.
+        // Calculate pseudo tx hash. This is needed to match other merge and proof formats.
         let merge_inclusion_proof1 =
             get_merkle_proof(&[deposit_diff_root.into()], 0, ROLLUP_CONSTANTS.log_n_txs);
 
@@ -134,10 +136,10 @@ mod tests {
             PoseidonSparseMerkleTree::new(sender1_nodes_db.clone(), RootDataTmp::default());
 
         let block_hash = get_block_hash(&deposit_block.header);
-        let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, block_hash);
+        let deposit_merge_key = PoseidonHash::two_to_one(deposit_diff_root, block_hash);
         let merge_process_proof = sender1_user_asset_tree
             .set(
-                deposit_tx_hash.into(),
+                deposit_merge_key.into(),
                 sender1_inner_user_asset_tree.get_root().unwrap(),
             )
             .unwrap();
@@ -171,7 +173,7 @@ mod tests {
         let zero = WrappedHashOut::ZERO;
         let proof1 = sender1_user_asset_tree
             .set(
-                deposit_tx_hash.into(),
+                deposit_merge_key.into(),
                 deposit_list[0].contract_address.to_hash_out().into(),
                 deposit_list[0].variable_index.to_hash_out().into(),
                 zero,
@@ -216,22 +218,26 @@ mod tests {
 
         let sender1_user_asset_root = WrappedHashOut::default();
         let nonce = WrappedHashOut::rand();
-        let transaction = service.send_assets(
-            sender1_account,
-            &merge_witnesses,
-            &purge_input_witness,
-            &purge_output_witness,
-            nonce,
-            sender1_user_asset_root,
-        );
+        let transaction = service
+            .send_assets(
+                sender1_account,
+                &merge_witnesses,
+                &purge_input_witness,
+                &purge_output_witness,
+                nonce,
+                sender1_user_asset_root,
+            )
+            .await;
 
-        let new_world_state_root = service.trigger_propose_block();
+        let new_world_state_root = service.trigger_propose_block().await;
 
-        let received_signature = service.sign_to_message(sender1_account, new_world_state_root);
+        let received_signature = sign_to_message(sender1_account, new_world_state_root).await;
 
-        service.send_received_signature(received_signature, transaction.tx_hash);
+        service
+            .send_received_signature(received_signature, transaction.tx_hash)
+            .await;
 
-        service.trigger_approve_block();
+        service.trigger_approve_block().await;
 
         Ok(())
     }

@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
+    path::PathBuf,
 };
 
 use intmax_rollup_interface::intmax_zkp_core::{
@@ -106,7 +107,7 @@ pub trait Wallet {
     type Error: 'static + Debug + Sync + Send;
 
     /// Initialize the wallet with seed.
-    fn new(seed: Self::Seed) -> Self;
+    fn new(wallet_file_path: PathBuf, seed: Self::Seed) -> Self;
 
     /// Store a account in a wallet.
     /// Panic if the address of the account was already used.

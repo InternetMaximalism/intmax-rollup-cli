@@ -90,7 +90,7 @@ error: Invalid value for '<user-address>': bad hexadecimal sequence size
 You can issue amount of tokens determined by a `token-id` with the same token address as your user address.
 
 ```
-intmax deposit -i <token-id> --amount <amount>
+intmax tx mint -i <token-id> --amount <amount>
 ```
 
 ### Example
@@ -98,7 +98,7 @@ intmax deposit -i <token-id> --amount <amount>
 Deposit your fungible token (the token address is the same with your user address and amount is an integer less than 2^56).
 
 ```
-intmax deposit --amount 1000000
+intmax tx mint --amount 1000000
 ```
 
 ### Example
@@ -106,7 +106,7 @@ intmax deposit --amount 1000000
 You can issue NFT. The token id can be selected from 0x01 to 0xff.
 
 ```
-intmax deposit --nft -i 0x01
+intmax tx mint --nft -i 0x01
 ```
 
 #### success response
@@ -191,7 +191,7 @@ Error: it is recommended that the NFT token ID be something other than 0x00
 Displays all currently owned assets.
 
 ```sh
-intmax assets
+intmax account assets
 ```
 
 ### Example

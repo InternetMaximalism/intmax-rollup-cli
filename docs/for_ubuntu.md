@@ -16,6 +16,16 @@ git clone https://github.com/InternetMaximalism/intmax-rollup-cli.git
 cd intmax-rollup-cli
 ```
 
+## Clone submodules
+
+```sh
+git submodule init
+git submodule update
+cd packages/intmax-rollup-interface
+git submodule init
+git submodule update
+```
+
 ## Install Rust
 
 https://www.rust-lang.org/tools/install
@@ -29,6 +39,7 @@ cargo --version # cargo 1.65.0-nightly (646e9a0b9 2022-09-02)
 ## Build this CLI
 
 ```sh
+cp -n example.env .env
 cargo build --release
 alias intmax='./target/release/intmax'
 intmax config aggregator-url https://prealpha.testnet.intmax.io/
