@@ -219,7 +219,8 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000 -u carol
+intmax account set-default carol
+intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000
 ```
 
 In this command, the `--receiver` field should contain the recipient's address in Ethereum format,
