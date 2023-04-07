@@ -183,7 +183,7 @@ intmax account set-default carol
 If the recipient accepts the offer, use the following command:
 
 ```sh
-intmax io activate <offer-id> --network scroll -u carol
+intmax io activate <offer-id> --network scroll
 ```
 
 When the recipient accepts the offer,
