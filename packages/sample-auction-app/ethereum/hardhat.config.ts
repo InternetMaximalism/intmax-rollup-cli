@@ -15,7 +15,7 @@ const config: HardhatUserConfig = {
       chainId: 534353,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
-    polygonzkevm: {
+    polygonzkevmtest: {
       url: `https://rpc.public.zkevm-test.net`,
       chainId: 1442,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],

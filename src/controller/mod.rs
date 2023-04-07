@@ -7,8 +7,7 @@ use std::{
 
 use intmax_interoperability_plugin::ethers::{
     prelude::k256::ecdsa::SigningKey,
-    signers::{LocalWallet, Signer},
-    types::{Bytes, H160, U256},
+    types::{H160, U256},
     utils::secret_key_to_address,
 };
 use intmax_rollup_interface::intmax_zkp_core::{
@@ -1374,28 +1373,28 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 };
                 #[cfg(feature = "verbose")]
                 dbg!(serde_json::to_string(&output_asset).unwrap());
-                let _tx_hash = transfer(&service, &mut wallet, user_address, &[output_asset])
+                let tx_hash = transfer(&service, &mut wallet, user_address, &[output_asset])
                     .await?
                     .expect("no transaction was sent");
 
                 let witness = {
                     // XXX
-                    // service
-                    //     .get_transaction_confirmation_witness(tx_hash, taker_address)
-                    //     .await?
+                    service
+                        .get_transaction_confirmation_witness(tx_hash, taker_address)
+                        .await?
 
-                    let eth_wallet = LocalWallet::new_with_signer(
-                        signer_key,
-                        my_account,
-                        network_config.chain_id,
-                    );
-                    let signature = eth_wallet
-                        .sign_message(Bytes::from(offer.taker_intmax))
-                        .await?;
-                    signature
-                        .verify(offer.taker_intmax, my_account)
-                        .expect("fail to verify signature");
-                    signature.to_vec().into()
+                    // let eth_wallet = LocalWallet::new_with_signer(
+                    //     signer_key,
+                    //     my_account,
+                    //     network_config.chain_id,
+                    // );
+                    // let signature = eth_wallet
+                    //     .sign_message(Bytes::from(offer.taker_intmax))
+                    //     .await?;
+                    // signature
+                    //     .verify(offer.taker_intmax, my_account)
+                    //     .expect("fail to verify signature");
+                    // signature.to_vec().into()
                 };
                 // dbg!(&witness);
 

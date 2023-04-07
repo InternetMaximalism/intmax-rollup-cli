@@ -16,21 +16,10 @@ git clone https://github.com/InternetMaximalism/intmax-rollup-cli.git -b staging
 cd intmax-rollup-cli
 ```
 
-### Clone submodules
-
-```sh
-git submodule init
-git submodule update
-cd packages/intmax-rollup-interface
-git submodule init
-git submodule update
-cd ../../
-```
-
 ### Build this CLI
 
 ```sh
-cargo --version # 1.65.0-nightly
+cargo --version # 1.67.0-nightly
 cargo run --release --bin intmax config aggregator-url https://alpha.testnet.intmax.io/
 ```
 
@@ -206,9 +195,9 @@ intmax account assets
 You will see a message that displays the amount of tokens that you currently own.
 
 ```txt
-User: carol (0x934fef2de17e8413)
+User: carol
 --------------------------------------------------------------------------------------
-  Token Address | 0x4d0bb1499dc84d26 [alice]
+  Token Address | [alice]
   Token ID      | 0x00
   Amount        | 1
 --------------------------------------------------------------------------------------
