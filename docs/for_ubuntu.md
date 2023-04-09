@@ -19,11 +19,7 @@ cd intmax-rollup-cli
 ## Clone submodules
 
 ```sh
-git submodule init
-git submodule update
-cd packages/intmax-rollup-interface
-git submodule init
-git submodule update
+git submodule update --init --recursive
 ```
 
 ## Install Rust

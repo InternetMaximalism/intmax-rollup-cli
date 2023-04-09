@@ -14,6 +14,7 @@ git clone git@github.com:InternetMaximalism/intmax-rollup-cli.git -b staging
 # or use HTTPS
 git clone https://github.com/InternetMaximalism/intmax-rollup-cli.git -b staging
 cd intmax-rollup-cli
+git submodule update --init --recursive
 ```
 
 ### Build this CLI
