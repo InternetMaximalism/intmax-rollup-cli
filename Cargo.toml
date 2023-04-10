@@ -9,9 +9,8 @@ ctrlc = "3.2"
 dirs = "4.0"
 dotenv = "0.15"
 hex = "0.4"
-
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "5320f79" }
-intmax-interoperability-plugin = { git = "https://github.com/InternetMaximalism/intmax-interoperability-plugin", rev = "dbc5d29" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "5d71b62" }
+intmax-interoperability-plugin = { path = "./packages/intmax-interoperability-plugin" }
 num-bigint = "0.4"
 regex = "1"
 reqwest = { version = "0.11", features = ["json"] }

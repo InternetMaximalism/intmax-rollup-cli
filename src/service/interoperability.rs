@@ -8,7 +8,7 @@ use intmax_interoperability_plugin::{
         prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
         providers::{Http, Provider},
         signers::LocalWallet,
-        types::{Bytes, H160, H256},
+        types::{Bytes, TransactionReceipt, H160, H256},
         utils::secret_key_to_address,
     },
 };
@@ -147,25 +147,28 @@ pub async fn register_transfer<F: RichField>(
         .unwrap();
     let contract = OfferManagerContractWrapper::new(offer_manager_contract_address, client);
 
-    // TODO: register also `receiving_transfer_info`
+    let tx = contract.register(
+        sending_transfer_info.intmax_account(),
+        sending_transfer_info.asset_id(),
+        sending_transfer_info.amount(),
+        receiving_transfer_info.address(),
+        receiving_transfer_info.intmax_account(),
+        receiving_transfer_info.token_address(),
+        receiving_transfer_info.amount(),
+    );
     println!("start register()");
-    contract
-        .register(
-            sending_transfer_info.intmax_account(),
-            sending_transfer_info.asset_id(),
-            sending_transfer_info.amount(),
-            receiving_transfer_info.address(),
-            receiving_transfer_info.intmax_account(),
-            receiving_transfer_info.token_address(),
-            receiving_transfer_info.amount(),
-        )
-        .send()
-        .await
-        .unwrap();
+    let pending_tx = tx.send().await.unwrap(); // before confirmation
+    let tx_hash = pending_tx.tx_hash();
+    println!("transaction hash is {:?}", tx_hash);
+    let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end register()");
 
-    // let logs = contract.get_register_events().await.unwrap();
-    // dbg!(logs);
+    let block_number = tx_receipt
+        .clone()
+        .expect("transaction receipt was not found")
+        .block_number
+        .unwrap();
+    println!("transaction mined in block number {block_number}");
 
     let offer_id = contract.next_offer_id().await.unwrap() - U256::from(1u8);
     let is_registered = contract.is_registered(offer_id).await.unwrap();
@@ -211,21 +214,29 @@ pub async fn activate_offer(
         })
         .collect::<Vec<_>>();
 
-    let logs_register = contract.get_register_events(topic1).await.unwrap();
+    let logs_register = contract
+        .get_register_events(Some(topic1), None)
+        .await
+        .unwrap();
     debug_assert_eq!(logs_register.len(), 1);
 
     // send token and activate flag on scroll
-    println!("start activate()");
-    contract
+    let tx = contract
         .activate(offer_id)
-        .value(logs_register[0].taker_amount)
-        .send()
-        .await
-        .unwrap();
+        .value(logs_register[0].taker_amount);
+    println!("start activate()");
+    let pending_tx = tx.send().await.unwrap(); // before confirmation
+    let tx_hash = pending_tx.tx_hash();
+    println!("transaction hash is {:?}", tx_hash);
+    let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end activate()");
 
-    // let logs = contract.get_activate_events().await.unwrap();
-    // dbg!(logs);
+    let block_number = tx_receipt
+        .clone()
+        .expect("transaction receipt was not found")
+        .block_number
+        .unwrap();
+    println!("transaction mined in block number {block_number}");
 
     let is_activated: bool = contract.is_activated(offer_id).await.unwrap();
 
@@ -307,11 +318,12 @@ pub async fn lock_offer<F: RichField>(
         .reverse_offer_manager_contract_address
         .parse()
         .unwrap();
-    let contract =
-        OfferManagerReverseContractWrapper::new(reverse_offer_manager_contract_address, client);
+    let contract = OfferManagerReverseContractWrapper::new(
+        reverse_offer_manager_contract_address,
+        client.clone(),
+    );
 
     // TODO: register also `receiving_transfer_info`
-    println!("start register()");
     let taker_intmax_address = sending_transfer_info.intmax_account();
     let taker_token_address = H160::default(); // ETH
     let taker_amount = sending_transfer_info.amount();
@@ -327,7 +339,7 @@ pub async fn lock_offer<F: RichField>(
     //     maker_asset_id,
     //     maker_amount,
     // );
-    contract
+    let tx = contract
         .register(
             taker_intmax_address,
             taker_token_address,
@@ -336,14 +348,21 @@ pub async fn lock_offer<F: RichField>(
             maker_asset_id,
             maker_amount,
         )
-        .value(sending_transfer_info.amount())
-        .send()
-        .await
-        .unwrap();
+        .value(sending_transfer_info.amount());
+
+    println!("start register()");
+    let pending_tx = tx.send().await.unwrap(); // before confirmation
+    let tx_hash = pending_tx.tx_hash();
+    println!("transaction hash is {:?}", tx_hash);
+    let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end register()");
 
-    // let logs = contract.get_register_events().await.unwrap();
-    // dbg!(logs);
+    let block_number = tx_receipt
+        .clone()
+        .expect("transaction receipt was not found")
+        .block_number
+        .unwrap();
+    println!("transaction mined in block number {block_number}");
 
     let offer_id = contract.next_offer_id().await.unwrap() - U256::from(1u8);
     let is_locked = contract.is_registered(offer_id).await.unwrap();
@@ -384,14 +403,28 @@ pub async fn unlock_offer(
         return Ok(true);
     }
 
+    // dbg!(offer_id, &witness);
+    // contract
+    //     .check_witness(offer_id, witness.clone())
+    //     .call()
+    //     .await?;
+
+    let tx = contract.activate(offer_id, witness);
+
     // send token and activate flag on scroll
     println!("start activate()");
-    // dbg!(offer_id, &witness);
-    contract.check_witness(offer_id, witness).send().await?;
+    let pending_tx = tx.send().await.unwrap(); // before confirmation
+    let tx_hash = pending_tx.tx_hash();
+    println!("transaction hash is {:?}", tx_hash);
+    let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end activate()");
 
-    // let logs = contract.get_activate_events().await.unwrap();
-    // dbg!(logs);
+    let block_number = tx_receipt
+        .clone()
+        .expect("transaction receipt was not found")
+        .block_number
+        .unwrap();
+    println!("transaction mined in block number {block_number}");
 
     let is_unlocked: bool = contract.is_activated(offer_id).await?;
 

@@ -10,6 +10,8 @@ use intmax_interoperability_plugin::ethers::{
     types::{H160, U256},
     utils::secret_key_to_address,
 };
+#[cfg(feature = "bridge")]
+use intmax_rollup_interface::intmax_zkp_core::plonky2::field::types::Field;
 use intmax_rollup_interface::intmax_zkp_core::{
     plonky2::{
         field::goldilocks_field::GoldilocksField,
@@ -23,6 +25,8 @@ use intmax_rollup_interface::intmax_zkp_core::{
 use num_bigint::BigUint;
 use structopt::StructOpt;
 
+#[cfg(feature = "bridge")]
+use crate::service::interoperability::NetworkName;
 use crate::{
     service::{
         builder::*,
@@ -388,6 +392,27 @@ enum BridgeCommand {
         #[structopt(long = "nft")]
         is_nft: bool,
 
+        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        #[structopt(long = "network", short = "n")]
+        network_name: String,
+    },
+    /// Send your owned token to others.
+    #[structopt(name = "exit")]
+    Burn {
+        #[structopt(long, short = "u")]
+        user_address: Option<String>,
+        /// token address
+        #[structopt(long = "token-address", short = "a")]
+        contract_address: Option<String>,
+        /// the token id can be selected from 0x00 to 0xff
+        #[structopt(long = "token-id", short = "i")]
+        token_id: Option<VariableIndex<F>>,
+        /// amount must be a positive integer less than 2^56
+        #[structopt(long, short = "q")]
+        amount: Option<u64>,
+        /// send NFT (an alias of `--amount 1`)
+        #[structopt(long = "nft")]
+        is_nft: bool,
         /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
         #[structopt(long = "network", short = "n")]
         network_name: String,
@@ -1465,11 +1490,95 @@ pub async fn invoke_command() -> anyhow::Result<()> {
             }
         },
         #[cfg(feature = "bridge")]
-        SubCommand::Bridge { bridge_command } => match bridge_command {
-            BridgeCommand::Deposit { .. } => {
-                anyhow::bail!("This is a upcoming feature.");
+        SubCommand::Bridge { bridge_command } => {
+            match bridge_command {
+                BridgeCommand::Deposit { .. } => {
+                    anyhow::bail!("This is a upcoming feature.");
+                }
+                BridgeCommand::Burn {
+                    user_address,
+                    contract_address,
+                    token_id: variable_index,
+                    amount,
+                    is_nft,
+                    network_name,
+                } => {
+                    let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+
+                    let network_name = NetworkName::from_str(&network_name)
+                        .map_err(|_| anyhow::anyhow!("invalid network name"))?;
+                    let receiver_address = match network_name {
+                        NetworkName::ScrollAlpha => Address(F::from_canonical_u64(1)),
+                        NetworkName::PolygonZkEvmTest => Address(F::from_canonical_u64(2)),
+                    };
+
+                    if user_address == receiver_address {
+                        anyhow::bail!("cannot send asset to myself");
+                    }
+
+                    let contract_address = if let Some(contract_address) = contract_address {
+                        if contract_address.is_empty() {
+                            anyhow::bail!("empty token address");
+                        } else if contract_address.starts_with("0x") {
+                            Address::from_str(&contract_address)?
+                        } else if let Some(contract_address) =
+                            nickname_table.nickname_to_address.get(&contract_address)
+                        {
+                            *contract_address
+                        } else {
+                            anyhow::bail!("unregistered nickname: token address");
+                        }
+                    } else {
+                        user_address
+                    };
+
+                    let variable_index = if let Some(variable_index) = variable_index {
+                        if is_nft && variable_index == 0u8.into() {
+                            anyhow::bail!("it is recommended that the NFT token ID be something other than 0x00");
+                        }
+
+                        variable_index
+                    } else {
+                        if is_nft {
+                            anyhow::bail!("you cannot omit --token-id attribute with --nft flag");
+                        }
+
+                        0u8.into()
+                    };
+                    let amount = if let Some(amount) = amount {
+                        if is_nft {
+                            println!("--nft flag was ignored because of --amount attribute");
+                        }
+
+                        amount
+                    } else if is_nft {
+                        1
+                    } else {
+                        anyhow::bail!("you cannot omit --amount attribute without --nft flag");
+                    };
+
+                    if amount == 0 || amount >= 1u64 << 56 {
+                        anyhow::bail!("`amount` must be a positive integer less than 2^56");
+                    }
+
+                    // let variable_index = VariableIndex::from_str(&variable_index).unwrap();
+                    let output_asset = ContributedAsset {
+                        receiver_address,
+                        kind: TokenKind {
+                            contract_address,
+                            variable_index,
+                        },
+                        amount,
+                    };
+                    #[cfg(feature = "verbose")]
+                    dbg!(serde_json::to_string(&output_asset).unwrap());
+
+                    ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
+
+                    transfer(&service, &mut wallet, user_address, &[output_asset]).await?;
+                }
             }
-        },
+        }
     }
 
     Ok(())

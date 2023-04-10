@@ -80,8 +80,6 @@ contract SimpleAuction is Context {
             bool success = _offerManagerInterface.deactivate(offerId);
             require(success, "fail to deactivate offer");
         } else {
-            withdrawableAmount[beneficiary] += largestBidAmount;
-
             // NOTE: Send ETH to OfferManager, but it is refunded to this contract.
             bool success = _offerManagerInterface.activate{
                 value: largestBidAmount
