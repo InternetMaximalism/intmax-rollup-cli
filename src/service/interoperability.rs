@@ -5,7 +5,7 @@ use intmax_interoperability_plugin::{
     contracts::offer_manager_reverse::OfferManagerReverseContractWrapper,
     ethers::{
         core::types::U256,
-        prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
+        prelude::{builders::ContractCall, k256::ecdsa::SigningKey, SignerMiddleware},
         providers::{Http, Provider},
         signers::LocalWallet,
         types::{Bytes, TransactionReceipt, H160, H256},
@@ -20,6 +20,8 @@ use intmax_rollup_interface::{
         zkdsa::account::Address,
     },
 };
+
+use crate::service::ethereum::{fetch_polygon_zkevm_test_gas_price, wei_to_gwei};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum NetworkName {
@@ -131,7 +133,8 @@ pub async fn register_transfer<F: RichField>(
     secret_key: String,
     sending_transfer_info: MakerTransferInfo<F>,
     receiving_transfer_info: TakerTransferInfo<F>,
-) -> U256 {
+    max_gas_price: Option<U256>,
+) -> anyhow::Result<U256> {
     let provider = Provider::<Http>::try_from(network_config.rpc_url)
         .unwrap()
         .interval(Duration::from_millis(10u64));
@@ -147,7 +150,7 @@ pub async fn register_transfer<F: RichField>(
         .unwrap();
     let contract = OfferManagerContractWrapper::new(offer_manager_contract_address, client);
 
-    let tx = contract.register(
+    let tx: ContractCall<_, _> = contract.register(
         sending_transfer_info.intmax_account(),
         sending_transfer_info.asset_id(),
         sending_transfer_info.amount(),
@@ -157,6 +160,20 @@ pub async fn register_transfer<F: RichField>(
         receiving_transfer_info.amount(),
     );
     println!("start register()");
+    let tx = if network_config.rpc_url == "https://rpc.public.zkevm-test.net" {
+        let gas_price = fetch_polygon_zkevm_test_gas_price().await.unwrap();
+        if let Some(max_gas_price) = max_gas_price {
+            if gas_price.standard > max_gas_price {
+                anyhow::bail!(
+                    "Gas prices are currently too high: {} Gwei",
+                    wei_to_gwei(gas_price.standard)
+                );
+            }
+        }
+        tx.gas_price(gas_price.standard)
+    } else {
+        tx
+    };
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
     println!("transaction hash is {:?}", tx_hash);
@@ -174,7 +191,7 @@ pub async fn register_transfer<F: RichField>(
     let is_registered = contract.is_registered(offer_id).await.unwrap();
     assert!(is_registered);
 
-    offer_id
+    Ok(offer_id)
 }
 
 pub async fn activate_offer(

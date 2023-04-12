@@ -221,10 +221,10 @@ you can create an offer by using the following command:
 
 ```sh
 intmax account set-default carol
-intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000
+intmax io lock --network scroll --maker-amount 1 --receiver <your-address> --receiver-address dave --taker-amount 1000000000000000
 ```
 
-In this command, the `--receiver` field should contain the recipient's address in Ethereum format,
+In this command, the `--receiver` field should contain the recipient's address in Ethereum,
 and the `--receiver-address` field should contain the recipient's address or nickname.
 When you make an offer,
 ETH will be transferred on the Scroll alpha testnet at this time.

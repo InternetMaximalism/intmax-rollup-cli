@@ -1255,20 +1255,20 @@ impl ServiceBuilder {
             address_bytes.reverse();
             address_bytes.try_into().unwrap()
         };
-        let message = H256::from(recipient);
-        // let message: [u8; 32] = taker_address.to_hash_out().to_bytes().try_into().unwrap();
-        // let message = taker_address;
+        // let message = H256::from(recipient);
+        // // let message: [u8; 32] = taker_address.to_hash_out().to_bytes().try_into().unwrap();
+        // // let message = taker_address;
 
-        const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // TODO: fetch from contract
-        let owner_address: [u8; 20] = hex::decode(&OWNER_ADDRESS[2..])
-            .unwrap()
-            .try_into()
-            .unwrap();
+        // const OWNER_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // TODO: fetch from contract
+        // let owner_address: [u8; 20] = hex::decode(&OWNER_ADDRESS[2..])
+        //     .unwrap()
+        //     .try_into()
+        //     .unwrap();
 
-        Signature::try_from(witness_bytes.as_slice())
-            .unwrap()
-            .verify(hash_message(message), owner_address)
-            .expect("fail to verify signature");
+        // Signature::try_from(witness_bytes.as_slice())
+        //     .unwrap()
+        //     .verify(hash_message(message), owner_address)
+        //     .expect("fail to verify signature");
 
         Ok(witness)
     }
