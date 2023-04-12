@@ -301,7 +301,7 @@ enum InteroperabilityCommand {
         /// send NFT (an alias of `--amount 1`)
         #[structopt(long = "nft")]
         is_nft: bool,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
         /// Upper limit of acceptable gas price in Gwei
@@ -314,7 +314,7 @@ enum InteroperabilityCommand {
         // user_address: Option<String>,
         #[structopt()]
         offer_id: usize,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
     },
@@ -343,7 +343,7 @@ enum InteroperabilityCommand {
         /// send NFT (an alias of `--amount 1`)
         #[structopt(long = "nft")]
         is_nft: bool,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
     },
@@ -353,7 +353,7 @@ enum InteroperabilityCommand {
         user_address: Option<String>,
         #[structopt()]
         offer_id: usize,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
     },
@@ -363,7 +363,7 @@ enum InteroperabilityCommand {
         // user_address: Option<String>,
         #[structopt()]
         offer_id: usize,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
         #[structopt(long = "reverse-offer", short = "r")]
@@ -392,7 +392,7 @@ enum BridgeCommand {
         #[structopt(long = "nft")]
         is_nft: bool,
 
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
     },
@@ -413,7 +413,7 @@ enum BridgeCommand {
         /// send NFT (an alias of `--amount 1`)
         #[structopt(long = "nft")]
         is_nft: bool,
-        /// choose "scroll" (Scroll Alpha) or "polygon" (Polygon zkEVM Testnet)
+        /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
         network_name: String,
     },
@@ -1006,6 +1006,13 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     wallet.backup()?;
                 }
 
+                {
+                    let network_name: NetworkName = network_name.parse()?;
+                    if network_name == NetworkName::PolygonZkEvmTest {
+                        anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
+                    }
+                }
+
                 let network_config = get_network_config(network_name.parse()?);
                 let secret_key =
                     std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
@@ -1153,6 +1160,13 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 //     .get_mut(&user_address)
                 //     .expect("user address was not found in wallet");
 
+                {
+                    let network_name: NetworkName = network_name.parse()?;
+                    if network_name == NetworkName::PolygonZkEvmTest {
+                        anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
+                    }
+                }
+
                 let network_config = get_network_config(network_name.parse()?);
                 let secret_key =
                     std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
@@ -1191,6 +1205,13 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         .await;
 
                     wallet.backup()?;
+                }
+
+                {
+                    let network_name: NetworkName = network_name.parse()?;
+                    if network_name == NetworkName::PolygonZkEvmTest {
+                        anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
+                    }
                 }
 
                 let network_config = get_network_config(network_name.parse()?);
@@ -1322,6 +1343,13 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         .await;
 
                     wallet.backup()?;
+                }
+
+                {
+                    let network_name: NetworkName = network_name.parse()?;
+                    if network_name == NetworkName::PolygonZkEvmTest {
+                        anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
+                    }
                 }
 
                 let network_config = get_network_config(network_name.parse()?);
