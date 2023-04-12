@@ -38,5 +38,5 @@ cargo --version # cargo 1.65.0-nightly (646e9a0b9 2022-09-02)
 cp -n example.env .env
 cargo build --release
 alias intmax='./target/release/intmax'
-intmax config aggregator-url https://prealpha.testnet.intmax.io/
+intmax config aggregator-url https://alpha.testnet.intmax.io/
 ```
