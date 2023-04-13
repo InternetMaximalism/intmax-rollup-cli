@@ -28,6 +28,7 @@ cargo run --release --bin intmax config aggregator-url https://alpha.testnet.int
 
 ```sh
 alias intmax="$(pwd)/target/release/intmax"
+intmax -V # intmax 2.0.2-alpha
 ```
 
 ## Update
