@@ -1,8 +1,5 @@
 use intmax_interoperability_plugin::ethers::types::U256;
-use reqwest::{
-    header::{HeaderMap, CONTENT_TYPE},
-    Client,
-};
+use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

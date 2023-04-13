@@ -1,9 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use intmax_interoperability_plugin::ethers::{
-    types::{Bytes, Signature, H256},
-    utils::hash_message,
-};
+use intmax_interoperability_plugin::ethers::types::Bytes;
 use intmax_rollup_interface::{
     constants::*,
     interface::*,
@@ -15,7 +12,7 @@ use intmax_rollup_interface::{
             iop::witness::PartialWitness,
             plonk::{
                 circuit_data::CircuitConfig,
-                config::{GenericConfig, GenericHashOut, Hasher, PoseidonGoldilocksConfig},
+                config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
             },
         },
         rollup::{
@@ -1248,13 +1245,14 @@ impl ServiceBuilder {
         #[cfg(feature = "verbose")]
         dbg!(&resp.witness);
         let witness_bytes = hex::decode(&resp.witness[2..]).unwrap();
-        let witness = Bytes::from(witness_bytes.clone());
+        let witness = Bytes::from(witness_bytes);
 
-        let recipient: [u8; 32] = {
-            let mut address_bytes = taker_address.to_hash_out().to_bytes();
-            address_bytes.reverse();
-            address_bytes.try_into().unwrap()
-        };
+        // TODO: Currently, there is no rigorous verification that the money transfer has been executed on the other party's network.
+        // let recipient: [u8; 32] = {
+        //     let mut address_bytes = taker_address.to_hash_out().to_bytes();
+        //     address_bytes.reverse();
+        //     address_bytes.try_into().unwrap()
+        // };
         // let message = H256::from(recipient);
         // // let message: [u8; 32] = taker_address.to_hash_out().to_bytes().try_into().unwrap();
         // // let message = taker_address;
