@@ -221,14 +221,19 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax account set-default carol
-intmax io lock --network scroll --maker-amount 1 --receiver <your-address> --receiver-address dave --taker-amount 1000000000000000
+intmax io lock --network scroll --maker-amount 1 --receiver <your-address> --receiver-address dave --taker-amount 1000000000000000 -u carol
 ```
 
-In this command, the `--receiver` field should contain the recipient's address in Ethereum,
+For example,
+
+```sh
+# Before executing, make sure that the address in the `--receiver` field is the one you own.
+intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000 -u carol
+```
+
+In this command, the `--receiver` field should contain the recipient's address on Scroll,
 and the `--receiver-address` field should contain the recipient's address or nickname.
-When you make an offer,
-ETH will be transferred on the Scroll alpha testnet at this time.
+When you make an offer, ETH will be transferred on the Scroll alpha testnet in `<your-address>`.
 Therefore, it is necessary to deposit ETH in advance.
 After executing this command, you will see a message that displays the offer ID.
 

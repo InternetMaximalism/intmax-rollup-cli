@@ -1150,11 +1150,12 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 wallet.backup()?;
             }
             InteroperabilityCommand::Activate {
+                // user_address,
                 offer_id,
                 network_name,
                 ..
             } => {
-                // let user_address = parse_address(&wallet, user_address)?;
+                // let _user_address = parse_address(&wallet, &nickname_table, user_address)?;
                 // let user_state = wallet
                 //     .data
                 //     .get_mut(&user_address)
