@@ -5,10 +5,18 @@ export const networkName = hre.network.name;
 console.log("networkName:", networkName);
 export const chainId = hre.network.config.chainId;
 console.log("chainId:", chainId);
-export const addressListFileName = `${__dirname}/cache/address.json`;
+export const addressListDirName = `${__dirname}/cache`;
+export const addressListFileName = `${addressListDirName}/address.json`;
 
 export const loadAddressList = () => {
-  let json = fs.readFileSync(addressListFileName, "utf-8");
+  let json = "";
+  if (!fs.existsSync(addressListDirName)) {
+    // console.log(`Directory created successfully at ${addressListDirName}`);
+  } else {
+    // console.log(`Directory already exists at ${addressListDirName}`);
+    json = fs.readFileSync(addressListFileName, "utf-8");
+  }
+
   if (json === "") {
     json = "{}";
   }
@@ -23,6 +31,13 @@ export const loadAddressList = () => {
 };
 
 export const storeAddressList = (addressList: any) => {
+  if (!fs.existsSync(addressListDirName)) {
+    fs.mkdirSync(addressListDirName, { recursive: true });
+    // console.log(`Directory created successfully at ${addressListDirName}`);
+  } else {
+    // console.log(`Directory already exists at ${addressListDirName}`);
+  }
+
   fs.writeFile(addressListFileName, JSON.stringify(addressList), (err: any) => {
     if (err) throw err;
     console.log("Update contract address");
