@@ -15,12 +15,12 @@ async function main() {
   let reverseOfferManagerAddress;
   if (networkName === "scrollalpha") {
     // Scroll alpha
-    offerManagerAddress = "0xD8f7FbABEacD6f103FB7278b3a7106e2fFBF0763";
-    reverseOfferManagerAddress = "0x2D372972f8c325dEFD7252c0e7d8cBd09a8A4c67";
+    offerManagerAddress = "0x007c969728eE4f068ceCF3405D65a037dB5BeEa1";
+    reverseOfferManagerAddress = "0x4ee8cB7864df06A8c7703988C15bAaAB9ac47CAe";
   } else if (networkName === "polygonzkevm") {
     // Polygon zkEVM
-    offerManagerAddress = "0x5602c213E1aEe9159E2A4d11fbFe19C56E7B3bE1";
-    reverseOfferManagerAddress = "0xD9626E93c03E83647b1202a4a1CA96Bcc399F9E7";
+    offerManagerAddress = "0x161a72Bc1b76586a36A9014Dd58d401eE2B24094";
+    reverseOfferManagerAddress = "0x1E316b313de98C7eCb2393995ef27715E3E1c7a7";
   } else {
     // TODO: Deploy OfferManager contract.
     throw new Error("Please use deploy.ts");
