@@ -253,9 +253,10 @@ enum TransactionCommand {
 
 #[derive(Debug, StructOpt)]
 enum BlockCommand {
-    // /// Trigger to propose a block.
-    // #[structopt(name = "propose")]
-    // Propose {},
+    /// [advanced command] Trigger to propose a block.
+    #[cfg(feature = "advanced")]
+    #[structopt(name = "propose")]
+    Propose {},
     /// [advanced command] Sign to the proposal block.
     /// It is usually performed automatically after the transaction has been executed.
     /// If you do not sign the proposal block containing your transaction by the deadline,
@@ -265,10 +266,12 @@ enum BlockCommand {
         #[structopt(long, short = "u")]
         user_address: Option<String>,
     },
-    // /// Trigger to approve a block.
-    // #[structopt(name = "approve")]
-    // Approve {},
+    /// [advanced command] Trigger to approve a block.
+    #[cfg(feature = "advanced")]
+    #[structopt(name = "approve")]
+    Approve {},
     /// [advanced command] Verify a approved block.
+    #[cfg(feature = "advanced")]
     #[structopt(name = "verify")]
     Verify {
         #[structopt(long, short = "n")]
@@ -957,9 +960,10 @@ pub async fn invoke_command() -> anyhow::Result<()> {
             }
         }
         SubCommand::Block { block_command } => match block_command {
-            // BlockCommand::Propose {} => {
-            //     service.trigger_propose_block();
-            // }
+            #[cfg(feature = "advanced")]
+            BlockCommand::Propose {} => {
+                service.trigger_propose_block().await;
+            }
             BlockCommand::Sign { user_address } => {
                 println!("block sign");
                 let user_address = parse_address(&wallet, &nickname_table, user_address)?;
@@ -972,9 +976,11 @@ pub async fn invoke_command() -> anyhow::Result<()> {
 
                 wallet.backup()?;
             }
-            // BlockCommand::Approve {} => {
-            //     service.trigger_approve_block();
-            // }
+            #[cfg(feature = "advanced")]
+            BlockCommand::Approve {} => {
+                service.trigger_approve_block().await;
+            }
+            #[cfg(feature = "advanced")]
             BlockCommand::Verify { block_number } => {
                 service.verify_block(block_number).await.unwrap();
             }

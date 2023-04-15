@@ -96,11 +96,6 @@ pub async fn fetch_polygon_zkevm_test_gas_price() -> anyhow::Result<GasStationIn
         .get("https://gasstation.polygon.technology/zkevm")
         .send()
         .await?;
-    #[cfg(feature = "verbose")]
-    {
-        let end = start.elapsed();
-        println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-    }
     if resp.status() != 200 {
         anyhow::bail!("{}", resp.text().await.unwrap());
     }
