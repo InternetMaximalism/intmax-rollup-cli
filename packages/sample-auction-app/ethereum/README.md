@@ -38,12 +38,13 @@ cd /path/to/sample-auction-app/ethereum
 
 Install modules and compile contracts.
 
-```
+```sh
 cp -n example.env .env
 npm i
 npx hardhat compile
 ```
 
+Edit `PRIVATE_KEY` in .env file before executing next commands.
 Replace `<seller-intmax-address>` and `<buyer-intmax-address>` section with the address you have created before running the following commands.
 
 ```sh
