@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "intmax"
-version = "2.0.2-alpha"
+version = "2.0.3-alpha"
 dependencies = [
  "anyhow",
  "ctrlc",
