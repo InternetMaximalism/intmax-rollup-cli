@@ -22,7 +22,8 @@ curl = "0.4.44"
 
 [features]
 default = ["parallel", "interoperability"]
-verbose = []
+verbose = ["advanced"]
 parallel = ["intmax-rollup-interface/parallel"]
+advanced = []
 interoperability = []
 bridge = []
