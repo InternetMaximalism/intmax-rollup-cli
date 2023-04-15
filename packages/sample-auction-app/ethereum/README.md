@@ -4,7 +4,7 @@
 
 ## How to test
 
-See [intmax-rollup-cli](https://github.com/InternetMaximalism/intmax-rollup-cli-flag/blob/main/README.md) and build CLI.
+See [intmax-rollup-cli](../../../README.md) and build CLI.
 First, create the accounts required for the test.
 
 ```sh
@@ -39,6 +39,7 @@ cd /path/to/sample-auction-app/ethereum
 Install modules and compile contracts.
 
 ```
+cp -n example.env .env
 npm i
 npx hardhat compile
 ```
@@ -46,6 +47,7 @@ npx hardhat compile
 Replace `<seller-intmax-address>` and `<buyer-intmax-address>` section with the address you have created before running the following commands.
 
 ```sh
+npx hardhat --network scrollalpha run ./scripts/load_offer_manager.ts
 # The seller puts a "seller" token up for auction.
 SELLER_INTMAX_ADDRESS=<seller-intmax-address> npx hardhat --network scrollalpha run ./scripts/start_auction.ts
 # The buyer bids 0.0002 ETH for seller's prize.
