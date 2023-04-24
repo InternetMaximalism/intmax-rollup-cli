@@ -38,6 +38,7 @@ If the CLI version has been updated, the following commands can be used to synch
 ```sh
 git checkout staging # only for users who have been using v1.0.2-alpha or earlier
 git pull origin staging
+cargo build --release
 ```
 
 For more information on the release, check [here](https://github.com/InternetMaximalism/intmax-rollup-cli/releases).

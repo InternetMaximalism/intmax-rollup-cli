@@ -33,7 +33,7 @@ use intmax_rollup_interface::{
         },
         transaction::{
             asset::{Asset, ContributedAsset, ReceivedAssetProof, TokenKind},
-            block_header::get_block_hash,
+            block_header::{get_block_hash, BlockHeader},
             circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
             gadgets::merge::MergeProof,
         },
@@ -1302,6 +1302,39 @@ impl ServiceBuilder {
         let resp = resp.json::<ResponseUserAssetProofBody>().await?;
 
         Ok(resp.proof)
+    }
+
+    pub async fn get_transaction_proof(
+        &self,
+        tx_hash: HashOut<F>,
+    ) -> anyhow::Result<(MerkleProof<F>, BlockHeader<F>)> {
+        let query = vec![("tx_hash", format!("{}", WrappedHashOut::from(tx_hash)))];
+        let api_path = "/account/transaction-proof";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("request {api_path}");
+            Instant::now()
+        };
+        let resp = Client::new()
+            .get(self.aggregator_api_url(api_path))
+            .query(&query)
+            .send()
+            .await?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
+        if resp.status() != 200 {
+            anyhow::bail!("{}", resp.text().await.unwrap());
+        }
+
+        let ResponseTransactionProofQuery {
+            transaction_proof,
+            block_header,
+        } = resp.json::<ResponseTransactionProofQuery>().await?;
+
+        Ok((transaction_proof, block_header))
     }
 }
 

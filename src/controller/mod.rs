@@ -151,7 +151,14 @@ enum AccountCommand {
     },
     /// [upcoming features] Output the possession proof of your assets.
     #[structopt(name = "possession-proof")]
-    PossessionProof {},
+    PossessionProof { user_address: Option<String> },
+    #[structopt(name = "transaction-proof")]
+    TransactionProof {
+        // #[structopt(long, short = "u")]
+        // user_address: Option<String>,
+        #[structopt()]
+        tx_hash: String,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -748,8 +755,18 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     }
                 }
             },
-            AccountCommand::PossessionProof { .. } => {
-                anyhow::bail!("This is a upcoming feature.");
+            AccountCommand::PossessionProof { user_address, .. } => {
+                let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+                service.get_possession_proof(user_address).await.unwrap();
+            }
+            AccountCommand::TransactionProof { tx_hash, .. } => {
+                // let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+                service
+                    .get_transaction_proof(
+                        *WrappedHashOut::from_str(&tx_hash).expect("tx hash is invalid: {tx_hash}"),
+                    )
+                    .await
+                    .unwrap();
             }
         },
         SubCommand::Transaction { tx_command } => {

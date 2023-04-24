@@ -13,7 +13,7 @@ use intmax_interoperability_plugin::{
     },
 };
 use intmax_rollup_interface::{
-    constants::{ContractConfig, POLYGON_NETWORK_CONFIG, SCROLL_NETWORK_CONFIG},
+    constants::{ContractConfig, POLYGON_ZKEVM_TEST_NETWORK_CONFIG, SCROLL_ALPHA_NETWORK_CONFIG},
     intmax_zkp_core::{
         plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut},
         transaction::asset::TokenKind,
@@ -63,8 +63,8 @@ impl std::str::FromStr for NetworkName {
 
 pub fn get_network_config(network_name: NetworkName) -> ContractConfig<'static> {
     match network_name {
-        NetworkName::ScrollAlpha => SCROLL_NETWORK_CONFIG,
-        NetworkName::PolygonZkEvmTest => POLYGON_NETWORK_CONFIG,
+        NetworkName::ScrollAlpha => SCROLL_ALPHA_NETWORK_CONFIG,
+        NetworkName::PolygonZkEvmTest => POLYGON_ZKEVM_TEST_NETWORK_CONFIG,
     }
 }
 

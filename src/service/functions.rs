@@ -3,12 +3,20 @@ use std::{collections::HashMap, str::FromStr};
 use intmax_rollup_interface::{
     constants::ROLLUP_CONSTANTS,
     intmax_zkp_core::{
-        plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        merkle_tree::tree::MerkleProof,
+        plonky2::{
+            hash::hash_types::HashOut,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
         sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
-        transaction::asset::{ContributedAsset, TokenKind},
+        transaction::{
+            asset::{ContributedAsset, TokenKind},
+            block_header::{get_block_hash, BlockHeader},
+        },
         zkdsa::account::Address,
     },
 };
+use serde_json::json;
 
 use crate::utils::{
     key_management::{memory::WalletOnMemory, types::Wallet},
@@ -220,4 +228,131 @@ pub async fn bulk_mint(
     transfer(service, wallet, user_address, &purge_diffs).await?;
 
     Ok(())
+}
+
+pub async fn create_transaction_proof(service: &ServiceBuilder, tx_hash: HashOut<F>) {
+    let (transaction_proof, block_header) = service.get_transaction_proof(tx_hash).await.unwrap();
+    // let block_number = block_header.block_number;
+    // let block_details = service.get_block_details(block_number).await.unwrap();
+    // let user_address = ;
+
+    let block_hash = get_block_hash(&block_header);
+    dbg!(WrappedHashOut::from(block_hash).to_string());
+    let encoded_transaction_proof_siblings = transaction_proof
+        .siblings
+        .iter()
+        .map(|v| v.to_string()[2..].to_string())
+        .collect::<Vec<_>>();
+    let encoded_transaction_proof = transaction_proof.root.to_string()
+        + &hex::encode(transaction_proof.index.to_be_bytes())
+        + &transaction_proof.value.to_string()[2..]
+        + &hex::encode(encoded_transaction_proof_siblings.len().to_be_bytes())
+        + &encoded_transaction_proof_siblings.join("");
+
+    {
+        let encoded_transaction_proof = encoded_transaction_proof[2..].to_string();
+        let decoded_root =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_transaction_proof[0..64]))
+                .unwrap();
+        let decoded_index = usize::from_be_bytes(
+            hex::decode(&encoded_transaction_proof[64..80])
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let decoded_value =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_transaction_proof[80..144]))
+                .unwrap();
+        let decoded_siblings_len = usize::from_be_bytes(
+            hex::decode(&encoded_transaction_proof[144..160])
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let mut decoded_siblings = vec![];
+        for i in 0..decoded_siblings_len {
+            decoded_siblings.push(
+                WrappedHashOut::from_str(
+                    &("0x".to_string()
+                        + &encoded_transaction_proof[160 + i * 64..160 + (i + 1) * 64]),
+                )
+                .unwrap(),
+            );
+        }
+        let decoded_transaction_proof = MerkleProof {
+            index: decoded_index,
+            value: decoded_value,
+            siblings: decoded_siblings,
+            root: decoded_root,
+        };
+        println!("encoded_transaction_proof: {}", encoded_transaction_proof);
+        dbg!(format!("{}", json!(&transaction_proof)));
+        assert_eq!(decoded_transaction_proof, transaction_proof);
+    }
+
+    let encoded_block_header = "0x".to_string()
+        + &WrappedHashOut::<F>::from_u32(block_header.block_number).to_string()[2..]
+        + &WrappedHashOut::from(block_header.prev_block_hash).to_string()[2..]
+        + &WrappedHashOut::from(block_header.block_headers_digest).to_string()[2..]
+        + &WrappedHashOut::from(block_header.transactions_digest).to_string()[2..]
+        + &WrappedHashOut::from(block_header.deposit_digest).to_string()[2..]
+        + &WrappedHashOut::from(block_header.proposed_world_state_digest).to_string()[2..]
+        + &WrappedHashOut::from(block_header.approved_world_state_digest).to_string()[2..]
+        + &WrappedHashOut::from(block_header.latest_account_digest).to_string()[2..];
+
+    {
+        let encoded_block_header = encoded_block_header[2..].to_string();
+        let decoded_block_number =
+            WrappedHashOut::<F>::from_str(&("0x".to_string() + &encoded_block_header[0..64]))
+                .unwrap()
+                .to_u32();
+        let decoded_prev_block_hash =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[64..128])).unwrap();
+        let decoded_block_headers_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[128..192]))
+                .unwrap();
+        let decoded_transactions_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[192..256]))
+                .unwrap();
+        let decoded_deposit_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[256..320]))
+                .unwrap();
+        let decoded_proposed_world_state_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[320..384]))
+                .unwrap();
+        let decoded_approved_world_state_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[384..448]))
+                .unwrap();
+        let decoded_latest_account_digest =
+            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[448..512]))
+                .unwrap();
+        let decoded_block_header = BlockHeader::<F> {
+            block_number: decoded_block_number,
+            prev_block_hash: *decoded_prev_block_hash,
+            block_headers_digest: *decoded_block_headers_digest,
+            transactions_digest: *decoded_transactions_digest,
+            deposit_digest: *decoded_deposit_digest,
+            proposed_world_state_digest: *decoded_proposed_world_state_digest,
+            approved_world_state_digest: *decoded_approved_world_state_digest,
+            latest_account_digest: *decoded_latest_account_digest,
+        };
+        println!("encoded_block_header: {}", encoded_block_header);
+        dbg!(format!("{}", json!(&block_header)));
+        assert_eq!(decoded_block_header, block_header);
+    }
+
+    // let diff_tree_inclusion_proof = transaction_proof;
+    // let block_info: BlockInfo<F> = block_details.into();
+    // let block_header_keccak = block_info.calc_block_header_keccak(ROLLUP_CONSTANTS.log_n_txs);
+    // let block_hash_keccak = block_header_keccak.block_hash();
+
+    // // transaction details
+    // let recipient = "0x00000000000000000000000000000000000000000000000010d1cb00b658931e";
+    // let token_address = "0x000000000000000000000000000000000000000000000000f7c23e5c2d79b6ae";
+    // let token_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    // let token_amount = 3;
+    // let nonce = "0xa710189dc0d8eb00a46e0411c0b1965192f80c50fbd8cbd51b5c67b26fc9dff1";
+
+    // let mut recipient_merkle_siblings = todo!();
+    // recipient_merkle_siblings.reverse();
 }
