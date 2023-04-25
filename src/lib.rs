@@ -83,8 +83,8 @@ mod tests {
             )
             .await
             .unwrap();
-        service.trigger_propose_block().await;
-        let deposit_block = service.trigger_approve_block().await;
+        service.trigger_propose_block().await.unwrap();
+        let deposit_block = service.trigger_approve_block().await.unwrap();
 
         let mut deposit_sender1_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
             sender1_nodes_db.clone(),
@@ -227,17 +227,19 @@ mod tests {
                 nonce,
                 sender1_user_asset_root,
             )
-            .await;
+            .await
+            .unwrap();
 
-        let new_world_state_root = service.trigger_propose_block().await;
+        let new_world_state_root = service.trigger_propose_block().await.unwrap();
 
         let received_signature = sign_to_message(sender1_account, new_world_state_root).await;
 
         service
             .send_received_signature(received_signature, transaction.tx_hash)
-            .await;
+            .await
+            .unwrap();
 
-        service.trigger_approve_block().await;
+        service.trigger_approve_block().await.unwrap();
 
         Ok(())
     }

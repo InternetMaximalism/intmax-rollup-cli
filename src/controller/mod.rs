@@ -583,7 +583,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     // .map(|v| WrappedHashOut::from_str(&v).expect("fail to parse user address"))
                     .unwrap_or_else(WrappedHashOut::rand);
                 let account = Account::new(*private_key);
-                service.register_account(account.public_key).await;
+                service.register_account(account.public_key).await.unwrap();
                 wallet.add_account(account)?;
 
                 println!("new account added: {}", account.address);
@@ -600,8 +600,8 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     println!("the above account appears replaced by {nickname}");
                 }
 
-                service.trigger_propose_block().await;
-                service.trigger_approve_block().await;
+                service.trigger_propose_block().await.unwrap();
+                service.trigger_approve_block().await.unwrap();
             }
             AccountCommand::List {} => {
                 let mut account_list = wallet.data.keys().collect::<Vec<_>>();
@@ -761,12 +761,10 @@ pub async fn invoke_command() -> anyhow::Result<()> {
             }
             AccountCommand::TransactionProof { tx_hash, .. } => {
                 // let user_address = parse_address(&wallet, &nickname_table, user_address)?;
-                service
-                    .get_transaction_proof(
-                        *WrappedHashOut::from_str(&tx_hash).expect("tx hash is invalid: {tx_hash}"),
-                    )
-                    .await
-                    .unwrap();
+                let tx_hash =
+                    WrappedHashOut::from_str(&tx_hash).expect("tx hash is invalid: {tx_hash}");
+                dbg!(&tx_hash);
+                service.get_transaction_proof(*tx_hash).await.unwrap();
             }
         },
         SubCommand::Transaction { tx_command } => {
@@ -825,8 +823,8 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         .deposit_assets(user_address, vec![deposit_info])
                         .await?;
 
-                    service.trigger_propose_block().await;
-                    service.trigger_approve_block().await;
+                    service.trigger_propose_block().await.unwrap();
+                    service.trigger_approve_block().await.unwrap();
                 }
                 TransactionCommand::Merge { user_address } => {
                     let user_address = parse_address(&wallet, &nickname_table, user_address)?;
@@ -1203,8 +1201,8 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 }
 
                 // reflect to deposit tree
-                service.trigger_propose_block().await;
-                service.trigger_approve_block().await;
+                service.trigger_propose_block().await.unwrap();
+                service.trigger_approve_block().await.unwrap();
             }
             InteroperabilityCommand::Lock {
                 user_address,

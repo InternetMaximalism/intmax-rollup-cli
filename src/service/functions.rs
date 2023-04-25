@@ -80,8 +80,8 @@ pub async fn merge(
 
         wallet.backup()?;
 
-        service.trigger_propose_block().await;
-        service.trigger_approve_block().await;
+        service.trigger_propose_block().await.unwrap();
+        service.trigger_approve_block().await.unwrap();
     }
 
     Ok(())
@@ -138,7 +138,7 @@ pub async fn transfer(
         tx_hash
     };
 
-    service.trigger_propose_block().await;
+    service.trigger_propose_block().await.unwrap();
 
     {
         let user_state = wallet
@@ -151,7 +151,7 @@ pub async fn transfer(
         wallet.backup()?;
     }
 
-    service.trigger_approve_block().await;
+    service.trigger_approve_block().await.unwrap();
 
     Ok(tx_hash)
 }
@@ -216,8 +216,8 @@ pub async fn bulk_mint(
 
         service.deposit_assets(user_address, deposit_list).await?;
 
-        service.trigger_propose_block().await;
-        service.trigger_approve_block().await;
+        service.trigger_propose_block().await.unwrap();
+        service.trigger_approve_block().await.unwrap();
     }
 
     let purge_diffs = distribution_list
