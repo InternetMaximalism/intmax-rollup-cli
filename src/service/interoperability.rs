@@ -1,8 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use intmax_interoperability_plugin::{
     contracts::offer_manager::OfferManagerContractWrapper,
-    contracts::offer_manager_reverse::OfferManagerReverseContractWrapper,
+    contracts::{
+        offer_manager_reverse::OfferManagerReverseContractWrapper, verifier::verifier_contract,
+        verifier::VerifierContract,
+    },
     ethers::{
         core::types::U256,
         prelude::{builders::ContractCall, k256::ecdsa::SigningKey, SignerMiddleware},
@@ -15,8 +18,16 @@ use intmax_interoperability_plugin::{
 use intmax_rollup_interface::{
     constants::{ContractConfig, POLYGON_ZKEVM_TEST_NETWORK_CONFIG, SCROLL_ALPHA_NETWORK_CONFIG},
     intmax_zkp_core::{
-        plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut},
-        transaction::asset::TokenKind,
+        merkle_tree::tree::MerkleProof,
+        plonky2::{
+            field::goldilocks_field::GoldilocksField, hash::hash_types::RichField,
+            plonk::config::GenericHashOut,
+        },
+        sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
+        transaction::{
+            asset::TokenKind,
+            block_header::{get_block_hash, BlockHeader},
+        },
         zkdsa::account::Address,
     },
 };
@@ -258,6 +269,206 @@ pub async fn activate_offer(
     let is_activated: bool = contract.is_activated(offer_id).await.unwrap();
 
     Ok(is_activated)
+}
+
+pub async fn update_transactions_digest(
+    network_config: &ContractConfig<'static>,
+    secret_key: String,
+    block_header: BlockHeader<GoldilocksField>,
+    witness: Bytes,
+) {
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let verifier_contract_address = network_config.verifier_contract_address;
+    let verifier_contract_address: H160 = verifier_contract_address.parse().unwrap();
+    let contract = VerifierContract::new(verifier_contract_address, client);
+
+    let block_hash = get_block_hash(&block_header);
+    let ok = contract
+        .verify_block_hash(
+            H256::from_str(&WrappedHashOut::from(block_hash).to_string()[2..])
+                .unwrap()
+                .into(),
+            witness.clone(),
+        )
+        .await
+        .unwrap();
+    assert!(ok, "fail to verify block hash");
+
+    let block_header = verifier_contract::BlockHeader {
+        block_number: block_header.block_number.into(),
+        prev_block_hash: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.prev_block_hash).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        block_headers_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.block_headers_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        transactions_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.transactions_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        deposit_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.deposit_digest).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        proposed_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.proposed_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        approved_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.approved_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        latest_account_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.latest_account_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+    };
+
+    let tx = contract.update_transactions_digest(block_header, witness);
+
+    println!("start update_transactions_digest()");
+    let pending_tx = tx.send().await.unwrap(); // before confirmation
+    let tx_hash = pending_tx.tx_hash();
+    println!("transaction hash is {:?}", tx_hash);
+    let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
+    println!("end update_transactions_digest()");
+
+    let block_number = tx_receipt
+        .expect("transaction receipt was not found")
+        .block_number
+        .unwrap();
+    println!("transaction mined in block number {block_number}");
+}
+
+pub async fn calc_asset_inclusion_proof(
+    network_config: &ContractConfig<'static>,
+    secret_key: String,
+    nonce: [u8; 32],
+    recipient_merkle_siblings: Vec<[u8; 32]>,
+    diff_tree_inclusion_proof: MerkleProof<GoldilocksField>,
+    block_header: BlockHeader<GoldilocksField>,
+) -> Bytes {
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let verifier_contract_address = network_config.verifier_contract_address;
+    let verifier_contract_address: H160 = verifier_contract_address.parse().unwrap();
+    let contract = VerifierContract::new(verifier_contract_address, client);
+
+    let diff_tree_inclusion_proof = verifier_contract::MerkleProof {
+        index: diff_tree_inclusion_proof.index.into(),
+        value: H256::from_str(&diff_tree_inclusion_proof.value.to_string()[2..])
+            .unwrap()
+            .into(),
+        siblings: diff_tree_inclusion_proof
+            .siblings
+            .iter()
+            .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
+            .collect::<Vec<_>>(),
+    };
+    let block_header = verifier_contract::BlockHeader {
+        block_number: block_header.block_number.into(),
+        prev_block_hash: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.prev_block_hash).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        block_headers_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.block_headers_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        transactions_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.transactions_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        deposit_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.deposit_digest).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        proposed_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.proposed_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        approved_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.approved_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        latest_account_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.latest_account_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+    };
+
+    contract
+        .calc_witness(
+            nonce,
+            recipient_merkle_siblings,
+            diff_tree_inclusion_proof,
+            block_header,
+        )
+        .await
+        .unwrap()
+}
+
+pub async fn verify_asset_inclusion_proof(
+    network_config: &ContractConfig<'static>,
+    secret_key: String,
+    asset: verifier_contract::Asset,
+    witness: Bytes,
+) -> bool {
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let verifier_contract_address = network_config.verifier_contract_address;
+    let verifier_contract_address: H160 = verifier_contract_address.parse().unwrap();
+    let contract = VerifierContract::new(verifier_contract_address, client);
+
+    contract.verify_asset(asset, witness).await.unwrap()
 }
 
 pub async fn get_offer(

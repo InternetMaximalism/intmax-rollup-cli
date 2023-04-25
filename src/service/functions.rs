@@ -1,14 +1,26 @@
 use std::{collections::HashMap, str::FromStr};
 
+use intmax_interoperability_plugin::{
+    contracts::verifier::verifier_contract,
+    ethers::types::{Bytes, H256},
+};
 use intmax_rollup_interface::{
-    constants::ROLLUP_CONSTANTS,
+    constants::{LOCAL_NETWORK_CONFIG, ROLLUP_CONSTANTS},
     intmax_zkp_core::{
-        merkle_tree::tree::MerkleProof,
+        merkle_tree::tree::{get_merkle_root, MerkleProof},
         plonky2::{
-            hash::hash_types::HashOut,
-            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+            field::types::PrimeField64,
+            hash::{hash_types::HashOut, poseidon::PoseidonHash},
+            plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
         },
-        sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
+        sparse_merkle_tree::{
+            goldilocks_poseidon::{
+                LayeredPoseidonSparseMerkleTreeMemory, PoseidonNodeHash, WrappedHashOut,
+            },
+            node_data::Node,
+            node_hash::NodeHash,
+            proof::SparseMerkleInclusionProof,
+        },
         transaction::{
             asset::{ContributedAsset, TokenKind},
             block_header::{get_block_hash, BlockHeader},
@@ -18,9 +30,14 @@ use intmax_rollup_interface::{
 };
 use serde_json::json;
 
-use crate::utils::{
-    key_management::{memory::WalletOnMemory, types::Wallet},
-    nickname::NicknameTable,
+use crate::{
+    service::interoperability::{
+        calc_asset_inclusion_proof, update_transactions_digest, verify_asset_inclusion_proof,
+    },
+    utils::{
+        key_management::{memory::WalletOnMemory, types::Wallet},
+        nickname::NicknameTable,
+    },
 };
 
 use super::builder::ServiceBuilder;
@@ -230,14 +247,155 @@ pub async fn bulk_mint(
     Ok(())
 }
 
+pub fn smt_proof_to_merkle_proof(
+    smt_proof: &SparseMerkleInclusionProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+) -> anyhow::Result<MerkleProof<F>> {
+    if !smt_proof.found {
+        anyhow::bail!("cannot convert a exclusion SMT proof to Merkle proof");
+    }
+
+    let mut index_rbo = smt_proof.key.elements[0].to_canonical_u64(); // reverse bit order
+    let mut index = 0u64;
+    for _ in smt_proof.siblings.iter() {
+        index <<= 1;
+        index += index_rbo & 1;
+        index_rbo >>= 1;
+    }
+
+    let mut siblings = smt_proof.siblings.clone();
+    siblings.reverse();
+
+    let value = PoseidonNodeHash::calc_node_hash(Node::Leaf(smt_proof.key, smt_proof.value));
+
+    Ok(MerkleProof {
+        root: smt_proof.root,
+        index: index as usize,
+        value,
+        siblings,
+    })
+}
+
 pub async fn create_transaction_proof(service: &ServiceBuilder, tx_hash: HashOut<F>) {
-    let (transaction_proof, block_header) = service.get_transaction_proof(tx_hash).await.unwrap();
+    let (tx_details, transaction_proof, block_header, signature) =
+        service.get_transaction_proof(tx_hash).await.unwrap();
+    // dbg!(&tx_details, &transaction_proof, &block_header);
+
+    let mut tx_diff_tree = LayeredPoseidonSparseMerkleTreeMemory::default();
+
+    for asset in tx_details.assets.iter() {
+        tx_diff_tree
+            .set(
+                asset.kind.contract_address.to_hash_out().into(),
+                asset.kind.variable_index.to_hash_out().into(),
+                WrappedHashOut::from_u64(asset.amount),
+            )
+            .unwrap();
+    }
+
+    // dbg!(tx_diff_tree.get_root().unwrap());
+
+    assert_eq!(tx_details.assets.len(), 1);
+    let target_asset = &tx_details.assets[0];
+    let asset_proof = tx_diff_tree
+        .find(
+            &target_asset.kind.contract_address.to_hash_out().into(),
+            &target_asset.kind.variable_index.to_hash_out().into(),
+        )
+        .unwrap();
+    // dbg!(&asset_proof);
+
+    let calculated_tx_hash =
+        PoseidonHash::two_to_one(*tx_details.inclusion_witness.root, *tx_details.nonce);
+    // dbg!(&calculated_tx_hash);
+
     // let block_number = block_header.block_number;
     // let block_details = service.get_block_details(block_number).await.unwrap();
     // let user_address = ;
 
     let block_hash = get_block_hash(&block_header);
-    dbg!(WrappedHashOut::from(block_hash).to_string());
+    // dbg!(WrappedHashOut::from(block_hash).to_string());
+
+    let asset_proof0 = tx_details.inclusion_witness;
+    let asset_proof1 = asset_proof.0;
+    let asset_proof2 = asset_proof.1;
+
+    {
+        let proof = &asset_proof0;
+        let proof = smt_proof_to_merkle_proof(proof).unwrap();
+        assert_eq!(
+            get_merkle_root(proof.index, proof.value, &proof.siblings),
+            proof.root
+        );
+        let proof = &asset_proof1;
+        let proof = smt_proof_to_merkle_proof(proof).unwrap();
+        assert_eq!(
+            get_merkle_root(proof.index, proof.value, &proof.siblings),
+            proof.root
+        );
+        let proof = &asset_proof2;
+        let proof = smt_proof_to_merkle_proof(proof).unwrap();
+        assert_eq!(
+            get_merkle_root(proof.index, proof.value, &proof.siblings),
+            proof.root
+        );
+    }
+    // let witness = (
+    //     signature.clone(),
+    //     block_hash,
+    //     block_header.clone(),
+    //     transaction_proof.clone(),
+    //     calculated_tx_hash,
+    //     tx_details.nonce,
+    //     asset_proof0.clone(),
+    //     asset_proof1,
+    //     asset_proof2,
+    //     *target_asset,
+    // );
+    // dbg!(&witness);
+
+    let network_config = LOCAL_NETWORK_CONFIG;
+    let secret_key = std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
+
+    update_transactions_digest(
+        &network_config,
+        secret_key.clone(),
+        block_header.clone(),
+        Bytes::from_str(&signature[2..]).unwrap(),
+    )
+    .await;
+
+    let witness = calc_asset_inclusion_proof(
+        &network_config,
+        secret_key.clone(),
+        H256::from_str(&tx_details.nonce.to_string()[2..])
+            .unwrap()
+            .into(),
+        asset_proof0
+            .siblings
+            .iter()
+            .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
+            .collect::<Vec<_>>(),
+        transaction_proof.clone(),
+        block_header.clone(),
+    )
+    .await;
+
+    let asset: verifier_contract::Asset = verifier_contract::Asset {
+        recipient: H256::from_str(&asset_proof0.key.to_string()[2..])
+            .unwrap()
+            .into(),
+        token_address: H256::from_str(
+            &WrappedHashOut::from(target_asset.kind.contract_address.to_hash_out()).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        token_id: target_asset.kind.variable_index.0.into(),
+        amount: target_asset.amount.into(),
+    };
+    let ok = verify_asset_inclusion_proof(&network_config, secret_key, asset, witness).await;
+    assert!(ok);
+
     let encoded_transaction_proof_siblings = transaction_proof
         .siblings
         .iter()

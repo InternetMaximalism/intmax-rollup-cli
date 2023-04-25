@@ -27,7 +27,7 @@ use crate::{
     service::{
         builder::*,
         ethereum::gwei_to_wei,
-        functions::{bulk_mint, merge, parse_address, transfer},
+        functions::{bulk_mint, create_transaction_proof, merge, parse_address, transfer},
         interoperability::{
             activate_offer, get_network_config, get_offer, lock_offer, register_transfer,
             unlock_offer, MakerTransferInfo, NetworkName, TakerTransferInfo,
@@ -158,6 +158,8 @@ enum AccountCommand {
         // user_address: Option<String>,
         #[structopt()]
         tx_hash: String,
+        // #[structopt()]
+        // receiver_address: String,
     },
 }
 
@@ -761,10 +763,25 @@ pub async fn invoke_command() -> anyhow::Result<()> {
             }
             AccountCommand::TransactionProof { tx_hash, .. } => {
                 // let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+                // let receiver_address = if receiver_address.is_empty() {
+                //     anyhow::bail!("empty recipient");
+                // } else if receiver_address.starts_with("0x") {
+                //     if receiver_address.len() != 18 {
+                //         anyhow::bail!("recipient must be 8 bytes hex string with 0x-prefix");
+                //     }
+
+                //     Address::from_str(&receiver_address)?
+                // } else if let Some(receiver_address) =
+                //     nickname_table.nickname_to_address.get(&receiver_address)
+                // {
+                //     *receiver_address
+                // } else {
+                //     anyhow::bail!("unregistered nickname: recipient");
+                // };
+
                 let tx_hash =
                     WrappedHashOut::from_str(&tx_hash).expect("tx hash is invalid: {tx_hash}");
-                dbg!(&tx_hash);
-                service.get_transaction_proof(*tx_hash).await.unwrap();
+                create_transaction_proof(&service, *tx_hash).await;
             }
         },
         SubCommand::Transaction { tx_command } => {

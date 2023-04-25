@@ -1357,7 +1357,7 @@ impl ServiceBuilder {
     pub async fn get_transaction_proof(
         &self,
         tx_hash: HashOut<F>,
-    ) -> anyhow::Result<(MerkleProof<F>, BlockHeader<F>)> {
+    ) -> anyhow::Result<(TxDetailGoldilocks, MerkleProof<F>, BlockHeader<F>, String)> {
         let query = vec![("tx_hash", format!("{}", WrappedHashOut::from(tx_hash)))];
         let api_path = "/account/transaction-proof";
         #[cfg(feature = "verbose")]
@@ -1383,11 +1383,13 @@ impl ServiceBuilder {
         }
 
         let ResponseTransactionProofQuery {
+            tx_details,
             transaction_proof,
             block_header,
+            witness,
         } = resp.json::<ResponseTransactionProofQuery>().await?;
 
-        Ok((transaction_proof, block_header))
+        Ok((tx_details, transaction_proof, block_header, witness))
     }
 }
 
