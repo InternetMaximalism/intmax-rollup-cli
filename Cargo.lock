@@ -1922,6 +1922,7 @@ dependencies = [
 [[package]]
 name = "intmax-rollup-interface"
 version = "0.1.0"
+source = "git+https://github.com/InternetMaximalism/intmax-rollup-interface?rev=f081b86#f081b8615b4d851e7df5f35c3266ffe04ef5bdd0"
 dependencies = [
  "hex",
  "intmax-zkp-core",
