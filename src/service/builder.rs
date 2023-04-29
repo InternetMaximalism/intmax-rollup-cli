@@ -68,7 +68,7 @@ pub async fn check_compatibility_with_server(service: &ServiceBuilder) -> anyhow
                 anyhow::bail!("Given aggregator URL is invalid.");
             }
 
-            if !version_info.version.starts_with("v0.4") {
+            if !version_info.version.starts_with("v0.5") {
                 anyhow::bail!("Given aggregator URL is valid but is an incompatible version. If you get this error, synchronizing this CLI to the latest version may solve the problem. For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli#update .");
             }
         }
@@ -976,7 +976,7 @@ impl ServiceBuilder {
 
     /// Get the latest block.
     pub async fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
-        // let mut query = vec![];
+        let query = RequestLatestBlockQuery {};
 
         let api_path = "/block/latest";
         #[cfg(feature = "verbose")]
@@ -986,6 +986,7 @@ impl ServiceBuilder {
         };
         let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
+            .query(&query)
             .send()
             .await?;
         #[cfg(feature = "verbose")]
@@ -1012,19 +1013,16 @@ impl ServiceBuilder {
         since: Option<u32>,
         until: Option<u32>,
     ) -> anyhow::Result<(Vec<BlockInfo<F>>, u32)> {
-        // let query = RequestBlockQuery {
-        //     since,
-        //     until,
-        // };
+        let query = RequestBlockQuery { since, until };
 
-        let mut query = vec![];
-        if let Some(since) = since {
-            query.push(("since", since.to_string()));
-        }
+        // let mut query = vec![];
+        // if let Some(since) = since {
+        //     query.push(("since", since.to_string()));
+        // }
 
-        if let Some(until) = until {
-            query.push(("until", until.to_string()));
-        }
+        // if let Some(until) = until {
+        //     query.push(("until", until.to_string()));
+        // }
 
         let api_path = "/block";
         #[cfg(feature = "verbose")]
@@ -1032,10 +1030,11 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
@@ -1055,7 +1054,8 @@ impl ServiceBuilder {
     }
 
     pub async fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
-        let query = vec![("block_number", block_number.to_string())];
+        let query = RequestBlockDetailQuery { block_number };
+        // let query = vec![("block_number", block_number.to_string())];
 
         let api_path = "/block/detail";
         #[cfg(feature = "verbose")]
@@ -1063,10 +1063,11 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
@@ -1129,10 +1130,14 @@ impl ServiceBuilder {
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
     ) -> anyhow::Result<(MerkleProof<F>, SmtInclusionProof<F>)> {
-        let query = vec![
-            ("user_address", format!("{}", user_address)),
-            ("tx_hash", format!("{}", tx_hash)),
-        ];
+        let query = RequestTxReceiptQuery {
+            user_address,
+            tx_hash,
+        };
+        // let query = vec![
+        //     ("user_address", format!("{}", user_address)),
+        //     ("tx_hash", format!("{}", tx_hash)),
+        // ];
 
         let api_path = "/tx/receipt";
         #[cfg(feature = "verbose")]
@@ -1140,10 +1145,11 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
@@ -1219,13 +1225,18 @@ impl ServiceBuilder {
         since: Option<u32>,
         until: Option<u32>,
     ) -> anyhow::Result<(Vec<ReceivedAssetProof<F>>, u32)> {
-        let mut query = vec![("user_address", format!("{}", user_address))];
-        if let Some(since) = since {
-            query.push(("since", format!("{}", since)));
-        }
-        if let Some(until) = until {
-            query.push(("until", format!("{}", until)));
-        }
+        let query = RequestAssetReceivedQuery {
+            user_address,
+            since,
+            until,
+        };
+        // let mut query = vec![("user_address", format!("{}", user_address))];
+        // if let Some(since) = since {
+        //     query.push(("since", format!("{}", since)));
+        // }
+        // if let Some(until) = until {
+        //     query.push(("until", format!("{}", until)));
+        // }
 
         let api_path = "/asset/received";
         #[cfg(feature = "verbose")]
@@ -1233,10 +1244,11 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
@@ -1260,10 +1272,14 @@ impl ServiceBuilder {
         tx_hash: WrappedHashOut<F>,
         taker_address: Address<F>,
     ) -> anyhow::Result<Bytes> {
-        let query = vec![
-            ("tx_hash", tx_hash.to_string()),
-            ("recipient", taker_address.to_string()),
-        ];
+        let query = RequestTxConfirmationWitnessQuery {
+            tx_hash,
+            recipient: taker_address,
+        };
+        // let query = vec![
+        //     ("tx_hash", tx_hash.to_string()),
+        //     ("recipient", taker_address.to_string()),
+        // ];
 
         let api_path = "/tx/confirmation/witness";
         #[cfg(feature = "verbose")]
@@ -1271,10 +1287,11 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
@@ -1357,8 +1374,12 @@ impl ServiceBuilder {
     pub async fn get_transaction_proof(
         &self,
         tx_hash: HashOut<F>,
+        receiver_address: Address<F>,
     ) -> anyhow::Result<(TxDetailGoldilocks, MerkleProof<F>, BlockHeader<F>, String)> {
-        let query = vec![("tx_hash", format!("{}", WrappedHashOut::from(tx_hash)))];
+        let query = RequestTransactionProofQuery {
+            tx_hash: tx_hash.into(),
+            receiver_address,
+        };
         let api_path = "/account/transaction-proof";
         #[cfg(feature = "verbose")]
         let start = {

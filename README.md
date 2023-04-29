@@ -142,14 +142,14 @@ If there is not a sufficient balance, use the following command to mint tokens:
 
 ```sh
 intmax account set-default bob
-intmax tx mint --amount 10 -i 0x00
+intmax tx mint --amount 10 -i 0x00 -u bob
 ```
 
 Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-amount 1000000000000000
+intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-amount 1000000000000000 -u bob
 ```
 
 Instead of sending 10 tokens of your own issue to the account created here,
@@ -196,7 +196,7 @@ Therefore, it is necessary to deposit ETH in advance.
 After activating the offer, use the following command to check your assets:
 
 ```sh
-intmax account assets
+intmax account assets -u carol
 ```
 
 You will see a message that displays the amount of tokens that you currently own.
@@ -204,7 +204,7 @@ You will see a message that displays the amount of tokens that you currently own
 ```txt
 User: carol
 --------------------------------------------------------------------------------------
-  Token Address | [alice]
+  Token Address | [bob]
   Token ID      | 0x00
   Amount        | 1
 --------------------------------------------------------------------------------------
@@ -222,7 +222,7 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax io lock --network scroll --maker-amount 1 --receiver <your-address> --receiver-address dave --taker-amount 1000000000000000 -u carol
+intmax io lock --network scroll --maker-amount 1 --receiver <receiver-scroll-address> --receiver-address dave --taker-amount 1000000000000000 -u carol
 ```
 
 For example,

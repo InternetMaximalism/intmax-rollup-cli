@@ -5,35 +5,27 @@ use intmax_interoperability_plugin::{
     ethers::types::{Bytes, H256},
 };
 use intmax_rollup_interface::{
-    constants::{LOCAL_NETWORK_CONFIG, ROLLUP_CONSTANTS},
+    constants::{ContractConfig, ROLLUP_CONSTANTS},
     intmax_zkp_core::{
-        merkle_tree::tree::{get_merkle_root, MerkleProof},
+        merkle_tree::tree::MerkleProof,
         plonky2::{
             field::types::PrimeField64,
-            hash::{hash_types::HashOut, poseidon::PoseidonHash},
-            plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+            hash::hash_types::HashOut,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
         },
         sparse_merkle_tree::{
-            goldilocks_poseidon::{
-                LayeredPoseidonSparseMerkleTreeMemory, PoseidonNodeHash, WrappedHashOut,
-            },
+            goldilocks_poseidon::{PoseidonNodeHash, WrappedHashOut},
             node_data::Node,
             node_hash::NodeHash,
             proof::SparseMerkleInclusionProof,
         },
-        transaction::{
-            asset::{ContributedAsset, TokenKind},
-            block_header::{get_block_hash, BlockHeader},
-        },
+        transaction::asset::{ContributedAsset, TokenKind},
         zkdsa::account::Address,
     },
 };
-use serde_json::json;
 
 use crate::{
-    service::interoperability::{
-        calc_asset_inclusion_proof, update_transactions_digest, verify_asset_inclusion_proof,
-    },
+    service::interoperability::verify_asset_inclusion_proof,
     utils::{
         key_management::{memory::WalletOnMemory, types::Wallet},
         nickname::NicknameTable,
@@ -275,115 +267,50 @@ pub fn smt_proof_to_merkle_proof(
     })
 }
 
-pub async fn create_transaction_proof(service: &ServiceBuilder, tx_hash: HashOut<F>) {
-    let (tx_details, transaction_proof, block_header, signature) =
-        service.get_transaction_proof(tx_hash).await.unwrap();
-    // dbg!(&tx_details, &transaction_proof, &block_header);
-
-    let mut tx_diff_tree = LayeredPoseidonSparseMerkleTreeMemory::default();
-
-    for asset in tx_details.assets.iter() {
-        tx_diff_tree
-            .set(
-                asset.kind.contract_address.to_hash_out().into(),
-                asset.kind.variable_index.to_hash_out().into(),
-                WrappedHashOut::from_u64(asset.amount),
-            )
-            .unwrap();
-    }
-
-    // dbg!(tx_diff_tree.get_root().unwrap());
-
-    assert_eq!(tx_details.assets.len(), 1);
-    let target_asset = &tx_details.assets[0];
-    let asset_proof = tx_diff_tree
-        .find(
-            &target_asset.kind.contract_address.to_hash_out().into(),
-            &target_asset.kind.variable_index.to_hash_out().into(),
-        )
+pub async fn create_transaction_proof(
+    service: &ServiceBuilder,
+    network_config: &ContractConfig<'static>,
+    secret_key: String,
+    tx_hash: HashOut<F>,
+    receiver_address: Address<F>,
+) -> anyhow::Result<Bytes> {
+    let (tx_details, _transaction_proof, _block_header, witness) = service
+        .get_transaction_proof(tx_hash, receiver_address)
+        .await
         .unwrap();
-    // dbg!(&asset_proof);
 
-    let calculated_tx_hash =
-        PoseidonHash::two_to_one(*tx_details.inclusion_witness.root, *tx_details.nonce);
-    // dbg!(&calculated_tx_hash);
-
-    // let block_number = block_header.block_number;
-    // let block_details = service.get_block_details(block_number).await.unwrap();
-    // let user_address = ;
-
-    let block_hash = get_block_hash(&block_header);
-    // dbg!(WrappedHashOut::from(block_hash).to_string());
-
-    let asset_proof0 = tx_details.inclusion_witness;
-    let asset_proof1 = asset_proof.0;
-    let asset_proof2 = asset_proof.1;
-
-    {
-        let proof = &asset_proof0;
-        let proof = smt_proof_to_merkle_proof(proof).unwrap();
-        assert_eq!(
-            get_merkle_root(proof.index, proof.value, &proof.siblings),
-            proof.root
-        );
-        let proof = &asset_proof1;
-        let proof = smt_proof_to_merkle_proof(proof).unwrap();
-        assert_eq!(
-            get_merkle_root(proof.index, proof.value, &proof.siblings),
-            proof.root
-        );
-        let proof = &asset_proof2;
-        let proof = smt_proof_to_merkle_proof(proof).unwrap();
-        assert_eq!(
-            get_merkle_root(proof.index, proof.value, &proof.siblings),
-            proof.root
-        );
-    }
-    // let witness = (
-    //     signature.clone(),
-    //     block_hash,
+    // update_transactions_digest(
+    //     &network_config,
+    //     secret_key.clone(),
     //     block_header.clone(),
+    //     Bytes::from_str(&signature[2..]).unwrap(),
+    // )
+    // .await;
+
+    // let witness = calc_asset_inclusion_proof(
+    //     &network_config,
+    //     secret_key.clone(),
+    //     H256::from_str(&tx_details.nonce.to_string()[2..])
+    //         .unwrap()
+    //         .into(),
+    //     tx_details
+    //         .inclusion_witness
+    //         .siblings
+    //         .iter()
+    //         .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
+    //         .collect::<Vec<_>>(),
     //     transaction_proof.clone(),
-    //     calculated_tx_hash,
-    //     tx_details.nonce,
-    //     asset_proof0.clone(),
-    //     asset_proof1,
-    //     asset_proof2,
-    //     *target_asset,
-    // );
-    // dbg!(&witness);
+    //     block_header.clone(),
+    // )
+    // .await;
 
-    let network_config = LOCAL_NETWORK_CONFIG;
-    let secret_key = std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
-
-    update_transactions_digest(
-        &network_config,
-        secret_key.clone(),
-        block_header.clone(),
-        Bytes::from_str(&signature[2..]).unwrap(),
-    )
-    .await;
-
-    let witness = calc_asset_inclusion_proof(
-        &network_config,
-        secret_key.clone(),
-        H256::from_str(&tx_details.nonce.to_string()[2..])
-            .unwrap()
-            .into(),
-        asset_proof0
-            .siblings
-            .iter()
-            .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
-            .collect::<Vec<_>>(),
-        transaction_proof.clone(),
-        block_header.clone(),
-    )
-    .await;
-
-    let asset: verifier_contract::Asset = verifier_contract::Asset {
-        recipient: H256::from_str(&asset_proof0.key.to_string()[2..])
-            .unwrap()
-            .into(),
+    // NOTICE: When exiting, only one type of token can be transferred at a time.
+    if tx_details.assets.len() != 1 {
+        anyhow::bail!("should transfer one kind of asset");
+    }
+    let target_asset = &tx_details.assets[0];
+    let recipient = H256::from_str(&tx_details.inclusion_witness.key.to_string()[2..]).unwrap();
+    let asset = verifier_contract::Asset {
         token_address: H256::from_str(
             &WrappedHashOut::from(target_asset.kind.contract_address.to_hash_out()).to_string()
                 [2..],
@@ -393,124 +320,20 @@ pub async fn create_transaction_proof(service: &ServiceBuilder, tx_hash: HashOut
         token_id: target_asset.kind.variable_index.0.into(),
         amount: target_asset.amount.into(),
     };
-    let ok = verify_asset_inclusion_proof(&network_config, secret_key, asset, witness).await;
-    assert!(ok);
-
-    let encoded_transaction_proof_siblings = transaction_proof
-        .siblings
-        .iter()
-        .map(|v| v.to_string()[2..].to_string())
-        .collect::<Vec<_>>();
-    let encoded_transaction_proof = transaction_proof.root.to_string()
-        + &hex::encode(transaction_proof.index.to_be_bytes())
-        + &transaction_proof.value.to_string()[2..]
-        + &hex::encode(encoded_transaction_proof_siblings.len().to_be_bytes())
-        + &encoded_transaction_proof_siblings.join("");
-
-    {
-        let encoded_transaction_proof = encoded_transaction_proof[2..].to_string();
-        let decoded_root =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_transaction_proof[0..64]))
-                .unwrap();
-        let decoded_index = usize::from_be_bytes(
-            hex::decode(&encoded_transaction_proof[64..80])
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        );
-        let decoded_value =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_transaction_proof[80..144]))
-                .unwrap();
-        let decoded_siblings_len = usize::from_be_bytes(
-            hex::decode(&encoded_transaction_proof[144..160])
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        );
-        let mut decoded_siblings = vec![];
-        for i in 0..decoded_siblings_len {
-            decoded_siblings.push(
-                WrappedHashOut::from_str(
-                    &("0x".to_string()
-                        + &encoded_transaction_proof[160 + i * 64..160 + (i + 1) * 64]),
-                )
-                .unwrap(),
-            );
-        }
-        let decoded_transaction_proof = MerkleProof {
-            index: decoded_index,
-            value: decoded_value,
-            siblings: decoded_siblings,
-            root: decoded_root,
-        };
-        println!("encoded_transaction_proof: {}", encoded_transaction_proof);
-        dbg!(format!("{}", json!(&transaction_proof)));
-        assert_eq!(decoded_transaction_proof, transaction_proof);
+    #[cfg(feature = "verbose")]
+    dbg!(recipient);
+    let witness = Bytes::from_str(&witness[2..]).unwrap();
+    let ok = verify_asset_inclusion_proof(
+        network_config,
+        secret_key,
+        vec![asset],
+        recipient,
+        witness.clone(),
+    )
+    .await;
+    if !ok {
+        anyhow::bail!("invalid witness");
     }
 
-    let encoded_block_header = "0x".to_string()
-        + &WrappedHashOut::<F>::from_u32(block_header.block_number).to_string()[2..]
-        + &WrappedHashOut::from(block_header.prev_block_hash).to_string()[2..]
-        + &WrappedHashOut::from(block_header.block_headers_digest).to_string()[2..]
-        + &WrappedHashOut::from(block_header.transactions_digest).to_string()[2..]
-        + &WrappedHashOut::from(block_header.deposit_digest).to_string()[2..]
-        + &WrappedHashOut::from(block_header.proposed_world_state_digest).to_string()[2..]
-        + &WrappedHashOut::from(block_header.approved_world_state_digest).to_string()[2..]
-        + &WrappedHashOut::from(block_header.latest_account_digest).to_string()[2..];
-
-    {
-        let encoded_block_header = encoded_block_header[2..].to_string();
-        let decoded_block_number =
-            WrappedHashOut::<F>::from_str(&("0x".to_string() + &encoded_block_header[0..64]))
-                .unwrap()
-                .to_u32();
-        let decoded_prev_block_hash =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[64..128])).unwrap();
-        let decoded_block_headers_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[128..192]))
-                .unwrap();
-        let decoded_transactions_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[192..256]))
-                .unwrap();
-        let decoded_deposit_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[256..320]))
-                .unwrap();
-        let decoded_proposed_world_state_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[320..384]))
-                .unwrap();
-        let decoded_approved_world_state_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[384..448]))
-                .unwrap();
-        let decoded_latest_account_digest =
-            WrappedHashOut::from_str(&("0x".to_string() + &encoded_block_header[448..512]))
-                .unwrap();
-        let decoded_block_header = BlockHeader::<F> {
-            block_number: decoded_block_number,
-            prev_block_hash: *decoded_prev_block_hash,
-            block_headers_digest: *decoded_block_headers_digest,
-            transactions_digest: *decoded_transactions_digest,
-            deposit_digest: *decoded_deposit_digest,
-            proposed_world_state_digest: *decoded_proposed_world_state_digest,
-            approved_world_state_digest: *decoded_approved_world_state_digest,
-            latest_account_digest: *decoded_latest_account_digest,
-        };
-        println!("encoded_block_header: {}", encoded_block_header);
-        dbg!(format!("{}", json!(&block_header)));
-        assert_eq!(decoded_block_header, block_header);
-    }
-
-    // let diff_tree_inclusion_proof = transaction_proof;
-    // let block_info: BlockInfo<F> = block_details.into();
-    // let block_header_keccak = block_info.calc_block_header_keccak(ROLLUP_CONSTANTS.log_n_txs);
-    // let block_hash_keccak = block_header_keccak.block_hash();
-
-    // // transaction details
-    // let recipient = "0x00000000000000000000000000000000000000000000000010d1cb00b658931e";
-    // let token_address = "0x000000000000000000000000000000000000000000000000f7c23e5c2d79b6ae";
-    // let token_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
-    // let token_amount = 3;
-    // let nonce = "0xa710189dc0d8eb00a46e0411c0b1965192f80c50fbd8cbd51b5c67b26fc9dff1";
-
-    // let mut recipient_merkle_siblings = todo!();
-    // recipient_merkle_siblings.reverse();
+    Ok(witness)
 }
