@@ -1,18 +1,35 @@
 use std::{collections::HashMap, str::FromStr};
 
+use intmax_interoperability_plugin::{
+    contracts::verifier::verifier_contract,
+    ethers::types::{Bytes, H256},
+};
 use intmax_rollup_interface::{
-    constants::ROLLUP_CONSTANTS,
+    constants::{ContractConfig, ROLLUP_CONSTANTS},
     intmax_zkp_core::{
-        plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-        sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
+        merkle_tree::tree::MerkleProof,
+        plonky2::{
+            field::types::PrimeField64,
+            hash::hash_types::HashOut,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
+        sparse_merkle_tree::{
+            goldilocks_poseidon::{PoseidonNodeHash, WrappedHashOut},
+            node_data::Node,
+            node_hash::NodeHash,
+            proof::SparseMerkleInclusionProof,
+        },
         transaction::asset::{ContributedAsset, TokenKind},
         zkdsa::account::Address,
     },
 };
 
-use crate::utils::{
-    key_management::{memory::WalletOnMemory, types::Wallet},
-    nickname::NicknameTable,
+use crate::{
+    service::interoperability::verify_asset_inclusion_proof,
+    utils::{
+        key_management::{memory::WalletOnMemory, types::Wallet},
+        nickname::NicknameTable,
+    },
 };
 
 use super::builder::ServiceBuilder;
@@ -72,8 +89,8 @@ pub async fn merge(
 
         wallet.backup()?;
 
-        service.trigger_propose_block().await;
-        service.trigger_approve_block().await;
+        service.trigger_propose_block().await.unwrap();
+        service.trigger_approve_block().await.unwrap();
     }
 
     Ok(())
@@ -130,7 +147,7 @@ pub async fn transfer(
         tx_hash
     };
 
-    service.trigger_propose_block().await;
+    service.trigger_propose_block().await.unwrap();
 
     {
         let user_state = wallet
@@ -143,7 +160,7 @@ pub async fn transfer(
         wallet.backup()?;
     }
 
-    service.trigger_approve_block().await;
+    service.trigger_approve_block().await.unwrap();
 
     Ok(tx_hash)
 }
@@ -208,8 +225,8 @@ pub async fn bulk_mint(
 
         service.deposit_assets(user_address, deposit_list).await?;
 
-        service.trigger_propose_block().await;
-        service.trigger_approve_block().await;
+        service.trigger_propose_block().await.unwrap();
+        service.trigger_approve_block().await.unwrap();
     }
 
     let purge_diffs = distribution_list
@@ -220,4 +237,74 @@ pub async fn bulk_mint(
     transfer(service, wallet, user_address, &purge_diffs).await?;
 
     Ok(())
+}
+
+pub fn smt_proof_to_merkle_proof(
+    smt_proof: &SparseMerkleInclusionProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+) -> anyhow::Result<MerkleProof<F>> {
+    if !smt_proof.found {
+        anyhow::bail!("cannot convert a exclusion SMT proof to Merkle proof");
+    }
+
+    let mut index_rbo = smt_proof.key.elements[0].to_canonical_u64(); // reverse bit order
+    let mut index = 0u64;
+    for _ in smt_proof.siblings.iter() {
+        index <<= 1;
+        index += index_rbo & 1;
+        index_rbo >>= 1;
+    }
+
+    let mut siblings = smt_proof.siblings.clone();
+    siblings.reverse();
+
+    let value = PoseidonNodeHash::calc_node_hash(Node::Leaf(smt_proof.key, smt_proof.value));
+
+    Ok(MerkleProof {
+        root: smt_proof.root,
+        index: index as usize,
+        value,
+        siblings,
+    })
+}
+
+pub async fn create_transaction_proof(
+    service: &ServiceBuilder,
+    network_config: Option<ContractConfig<'static>>,
+    tx_hash: HashOut<F>,
+    receiver_address: Address<F>,
+) -> anyhow::Result<Bytes> {
+    let (tx_details, _transaction_proof, _block_header, witness) = service
+        .get_transaction_proof(tx_hash, receiver_address)
+        .await
+        .unwrap();
+
+    // NOTICE: When exiting, only one type of token can be transferred at a time.
+    if tx_details.assets.len() != 1 {
+        anyhow::bail!("should transfer one kind of asset");
+    }
+    let target_asset = &tx_details.assets[0];
+    let recipient = H256::from_str(&tx_details.inclusion_witness.key.to_string()[2..]).unwrap();
+    let asset = verifier_contract::Asset {
+        token_address: H256::from_str(
+            &WrappedHashOut::from(target_asset.kind.contract_address.to_hash_out()).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        token_id: target_asset.kind.variable_index.0.into(),
+        amount: target_asset.amount.into(),
+    };
+    #[cfg(feature = "verbose")]
+    dbg!(recipient);
+    let witness = Bytes::from_str(&witness[2..]).unwrap();
+    if let Some(network_config) = network_config {
+        let ok =
+            verify_asset_inclusion_proof(&network_config, vec![asset], recipient, witness.clone())
+                .await;
+        if !ok {
+            anyhow::bail!("invalid witness");
+        }
+    }
+
+    Ok(witness)
 }

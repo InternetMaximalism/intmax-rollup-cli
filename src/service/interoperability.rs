@@ -1,9 +1,13 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use intmax_interoperability_plugin::{
     contracts::offer_manager::OfferManagerContractWrapper,
-    contracts::offer_manager_reverse::OfferManagerReverseContractWrapper,
+    contracts::{
+        offer_manager_reverse::OfferManagerReverseContractWrapper,
+        verifier::{verifier_contract, VerifierContract},
+    },
     ethers::{
+        abi::AbiEncode,
         core::types::U256,
         prelude::{builders::ContractCall, k256::ecdsa::SigningKey, SignerMiddleware},
         providers::{Http, Provider},
@@ -13,10 +17,15 @@ use intmax_interoperability_plugin::{
     },
 };
 use intmax_rollup_interface::{
-    constants::{ContractConfig, POLYGON_NETWORK_CONFIG, SCROLL_NETWORK_CONFIG},
+    constants::{ContractConfig, POLYGON_ZKEVM_TEST_NETWORK_CONFIG, SCROLL_ALPHA_NETWORK_CONFIG},
     intmax_zkp_core::{
-        plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut},
-        transaction::asset::TokenKind,
+        merkle_tree::tree::MerkleProof,
+        plonky2::{
+            field::goldilocks_field::GoldilocksField, hash::hash_types::RichField,
+            plonk::config::GenericHashOut,
+        },
+        sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
+        transaction::{asset::TokenKind, block_header::BlockHeader},
         zkdsa::account::Address,
     },
 };
@@ -63,8 +72,8 @@ impl std::str::FromStr for NetworkName {
 
 pub fn get_network_config(network_name: NetworkName) -> ContractConfig<'static> {
     match network_name {
-        NetworkName::ScrollAlpha => SCROLL_NETWORK_CONFIG,
-        NetworkName::PolygonZkEvmTest => POLYGON_NETWORK_CONFIG,
+        NetworkName::ScrollAlpha => SCROLL_ALPHA_NETWORK_CONFIG,
+        NetworkName::PolygonZkEvmTest => POLYGON_ZKEVM_TEST_NETWORK_CONFIG,
     }
 }
 
@@ -134,6 +143,7 @@ pub async fn register_transfer<F: RichField>(
     sending_transfer_info: MakerTransferInfo<F>,
     receiving_transfer_info: TakerTransferInfo<F>,
     max_gas_price: Option<U256>,
+    witness: Bytes,
 ) -> anyhow::Result<U256> {
     let provider = Provider::<Http>::try_from(network_config.rpc_url)
         .unwrap()
@@ -150,7 +160,8 @@ pub async fn register_transfer<F: RichField>(
         .unwrap();
     let contract = OfferManagerContractWrapper::new(offer_manager_contract_address, client);
 
-    let tx: ContractCall<_, _> = contract.register(
+    let tx: ContractCall<_, _> = contract.register_with_maker_intmax_address_and_maker_asset_id_and_maker_amount_and_taker_and_taker_intmax_address_and_taker_token_address_and_taker_amount
+     (
         sending_transfer_info.intmax_account(),
         sending_transfer_info.asset_id(),
         sending_transfer_info.amount(),
@@ -158,6 +169,7 @@ pub async fn register_transfer<F: RichField>(
         receiving_transfer_info.intmax_account(),
         receiving_transfer_info.token_address(),
         receiving_transfer_info.amount(),
+        witness,
     );
     println!("start register()");
     let tx = if network_config.rpc_url == "https://rpc.public.zkevm-test.net" {
@@ -258,6 +270,105 @@ pub async fn activate_offer(
     let is_activated: bool = contract.is_activated(offer_id).await.unwrap();
 
     Ok(is_activated)
+}
+
+pub async fn calc_asset_inclusion_proof(
+    _network_config: &ContractConfig<'static>,
+    _secret_key: String,
+    nonce: [u8; 32],
+    recipient_merkle_siblings: Vec<[u8; 32]>,
+    diff_tree_inclusion_proof: MerkleProof<GoldilocksField>,
+    block_header: BlockHeader<GoldilocksField>,
+) -> Bytes {
+    let diff_tree_inclusion_proof = verifier_contract::MerkleProof {
+        index: diff_tree_inclusion_proof.index.into(),
+        value: H256::from_str(&diff_tree_inclusion_proof.value.to_string()[2..])
+            .unwrap()
+            .into(),
+        siblings: diff_tree_inclusion_proof
+            .siblings
+            .iter()
+            .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
+            .collect::<Vec<_>>(),
+    };
+    let block_header = verifier_contract::BlockHeader {
+        block_number: block_header.block_number.into(),
+        prev_block_hash: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.prev_block_hash).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        block_headers_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.block_headers_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        transactions_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.transactions_digest).to_string()
+                [2..],
+        )
+        .unwrap()
+        .into(),
+        deposit_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.deposit_digest).to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        proposed_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.proposed_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        approved_world_state_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.approved_world_state_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+        latest_account_digest: H256::from_str(
+            &WrappedHashOut::<GoldilocksField>::from(block_header.latest_account_digest)
+                .to_string()[2..],
+        )
+        .unwrap()
+        .into(),
+    };
+
+    (
+        Bytes::from(nonce),
+        recipient_merkle_siblings,
+        diff_tree_inclusion_proof,
+        block_header,
+    )
+        .encode()
+        .into()
+}
+
+pub async fn verify_asset_inclusion_proof(
+    network_config: &ContractConfig<'static>,
+    assets: Vec<verifier_contract::Asset>,
+    recipient: H256,
+    witness: Bytes,
+) -> bool {
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    let rng = rand::thread_rng();
+    let signer_key = SigningKey::random(rng);
+    let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let verifier_contract_address = network_config.verifier_contract_address;
+    let verifier_contract_address: H160 = verifier_contract_address.parse().unwrap();
+    let contract = VerifierContract::new(verifier_contract_address, client);
+
+    contract
+        .verify_assets(assets, recipient.into(), witness)
+        .await
+        .unwrap()
 }
 
 pub async fn get_offer(

@@ -1,15 +1,16 @@
 [package]
 name = "intmax"
-version = "2.0.3-alpha"
+version = "2.1.0-alpha"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
 ctrlc = "3.2"
+curl = "0.4.44"
 dirs = "4.0"
 dotenv = "0.15"
 hex = "0.4"
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "5d71b62" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "3254525" }
 intmax-interoperability-plugin = { path = "./packages/intmax-interoperability-plugin" }
 num-bigint = "0.4"
 regex = "1"
@@ -18,12 +19,13 @@ serde = "1.0"
 serde_json = "1.0"
 structopt = "0.3"
 tokio = { version = "1.18", features = ["macros"] }
-curl = "0.4.44"
+rand = "0.8.5"
 
 [features]
 default = ["parallel", "interoperability"]
 verbose = ["advanced"]
 parallel = ["intmax-rollup-interface/parallel"]
 advanced = []
+enable-polygon-zkevm = []
 interoperability = []
 bridge = []

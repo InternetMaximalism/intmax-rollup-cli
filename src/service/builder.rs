@@ -33,7 +33,7 @@ use intmax_rollup_interface::{
         },
         transaction::{
             asset::{Asset, ContributedAsset, ReceivedAssetProof, TokenKind},
-            block_header::get_block_hash,
+            block_header::{get_block_hash, BlockHeader},
             circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
             gadgets::merge::MergeProof,
         },
@@ -68,7 +68,7 @@ pub async fn check_compatibility_with_server(service: &ServiceBuilder) -> anyhow
                 anyhow::bail!("Given aggregator URL is invalid.");
             }
 
-            if !version_info.version.starts_with("v0.4") {
+            if !version_info.version.starts_with("v0.5") {
                 anyhow::bail!("Given aggregator URL is valid but is an incompatible version. If you get this error, synchronizing this CLI to the latest version may solve the problem. For more information, see https://github.com/InternetMaximalism/intmax-rollup-cli#update .");
             }
         }
@@ -116,7 +116,7 @@ impl ServiceBuilder {
         Ok(())
     }
 
-    pub async fn register_account(&self, public_key: PublicKey<F>) -> Address<F> {
+    pub async fn register_account(&self, public_key: PublicKey<F>) -> anyhow::Result<Address<F>> {
         let payload = RequestAccountRegisterBody {
             public_key: public_key.into(),
         };
@@ -140,7 +140,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -148,7 +151,7 @@ impl ServiceBuilder {
             .await
             .expect("fail to parse JSON");
 
-        resp.address
+        Ok(resp.address)
     }
 
     /// test function
@@ -192,7 +195,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -217,7 +223,7 @@ impl ServiceBuilder {
         purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         nonce: WrappedHashOut<F>,
         user_asset_root: WrappedHashOut<F>,
-    ) -> MergeAndPurgeTransitionPublicInputs<F> {
+    ) -> anyhow::Result<MergeAndPurgeTransitionPublicInputs<F>> {
         let user_tx_proof = {
             let config = CircuitConfig::standard_recursion_config();
             let merge_and_purge_circuit =
@@ -275,7 +281,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -285,7 +294,7 @@ impl ServiceBuilder {
 
         assert_eq!(resp.tx_hash, transaction.tx_hash);
 
-        transaction
+        Ok(transaction)
     }
 
     // pub async fn merge_deposits(
@@ -381,6 +390,8 @@ impl ServiceBuilder {
             .send()
             .await?;
         if resp.status() != 200 {
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
             let error_message = resp.text().await?;
             anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
@@ -679,7 +690,8 @@ impl ServiceBuilder {
                 nonce,
                 old_user_asset_root,
             )
-            .await;
+            .await
+            .unwrap();
         // dbg!(transaction.diff_root);
 
         // Delete merge transactions included in the send API.
@@ -722,7 +734,8 @@ impl ServiceBuilder {
                 purge_output_inclusion_witnesses,
                 assets_list,
             )
-            .await;
+            .await
+            .unwrap();
         }
 
         user_state
@@ -740,10 +753,10 @@ impl ServiceBuilder {
         nonce: WrappedHashOut<F>,
         purge_output_inclusion_witnesses: Vec<SmtInclusionProof<F>>,
         assets: Vec<Vec<Asset<F>>>,
-    ) {
+    ) -> anyhow::Result<()> {
         if purge_output_inclusion_witnesses.is_empty() {
             println!("no purging transaction given");
-            return;
+            return Ok(());
         }
 
         let payload = RequestTxBroadcastBody {
@@ -775,7 +788,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -786,11 +802,13 @@ impl ServiceBuilder {
         if resp.ok {
             println!("broadcast transaction successfully");
         } else {
-            panic!("fail to broadcast transaction");
+            anyhow::bail!("fail to broadcast transaction");
         }
+
+        Ok(())
     }
 
-    pub async fn trigger_propose_block(&self) -> HashOut<F> {
+    pub async fn trigger_propose_block(&self) -> anyhow::Result<HashOut<F>> {
         let body = r#"{}"#;
 
         let api_path = "/block/propose";
@@ -812,7 +830,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -820,10 +841,10 @@ impl ServiceBuilder {
             .await
             .expect("fail to parse JSON");
 
-        *resp.new_world_state_root
+        Ok(*resp.new_world_state_root)
     }
 
-    pub async fn trigger_approve_block(&self) -> BlockInfo<F> {
+    pub async fn trigger_approve_block(&self) -> anyhow::Result<BlockInfo<F>> {
         let body = r#"{}"#;
 
         let api_path = "/block/approve";
@@ -845,7 +866,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -853,7 +877,7 @@ impl ServiceBuilder {
             .await
             .expect("fail to parse JSON");
 
-        resp.new_block
+        Ok(resp.new_block)
     }
 
     pub async fn verify_block(&self, block_number: Option<u32>) -> anyhow::Result<()> {
@@ -952,7 +976,7 @@ impl ServiceBuilder {
 
     /// Get the latest block.
     pub async fn get_latest_block(&self) -> anyhow::Result<BlockInfo<F>> {
-        // let mut query = vec![];
+        let query = RequestLatestBlockQuery {};
 
         let api_path = "/block/latest";
         #[cfg(feature = "verbose")]
@@ -962,6 +986,7 @@ impl ServiceBuilder {
         };
         let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
+            .query(&query)
             .send()
             .await?;
         #[cfg(feature = "verbose")]
@@ -970,8 +995,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
             let error_message = resp.text().await?;
-            anyhow::bail!("unexpected response from {}: {}", api_path, error_message);
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseLatestBlockQuery>().await?;
@@ -986,19 +1013,16 @@ impl ServiceBuilder {
         since: Option<u32>,
         until: Option<u32>,
     ) -> anyhow::Result<(Vec<BlockInfo<F>>, u32)> {
-        // let query = RequestBlockQuery {
-        //     since,
-        //     until,
-        // };
+        let query = RequestBlockQuery { since, until };
 
-        let mut query = vec![];
-        if let Some(since) = since {
-            query.push(("since", since.to_string()));
-        }
+        // let mut query = vec![];
+        // if let Some(since) = since {
+        //     query.push(("since", since.to_string()));
+        // }
 
-        if let Some(until) = until {
-            query.push(("until", until.to_string()));
-        }
+        // if let Some(until) = until {
+        //     query.push(("until", until.to_string()));
+        // }
 
         let api_path = "/block";
         #[cfg(feature = "verbose")]
@@ -1006,17 +1030,21 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseBlockQuery>().await?;
@@ -1026,7 +1054,8 @@ impl ServiceBuilder {
     }
 
     pub async fn get_block_details(&self, block_number: u32) -> anyhow::Result<BlockDetails> {
-        let query = vec![("block_number", block_number.to_string())];
+        let query = RequestBlockDetailQuery { block_number };
+        // let query = vec![("block_number", block_number.to_string())];
 
         let api_path = "/block/detail";
         #[cfg(feature = "verbose")]
@@ -1034,17 +1063,21 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseBlockDetailQuery>().await?;
@@ -1075,7 +1108,8 @@ impl ServiceBuilder {
             let received_signature =
                 sign_to_message(user_state.account, *proposed_world_state_root).await;
             self.send_received_signature(received_signature, *tx_hash)
-                .await;
+                .await
+                .unwrap();
 
             *proposed_block_number = Some(latest_block.header.block_number + 1);
 
@@ -1096,10 +1130,14 @@ impl ServiceBuilder {
         user_address: Address<F>,
         tx_hash: WrappedHashOut<F>,
     ) -> anyhow::Result<(MerkleProof<F>, SmtInclusionProof<F>)> {
-        let query = vec![
-            ("user_address", format!("{}", user_address)),
-            ("tx_hash", format!("{}", tx_hash)),
-        ];
+        let query = RequestTxReceiptQuery {
+            user_address,
+            tx_hash,
+        };
+        // let query = vec![
+        //     ("user_address", format!("{}", user_address)),
+        //     ("tx_hash", format!("{}", tx_hash)),
+        // ];
 
         let api_path = "/tx/receipt";
         #[cfg(feature = "verbose")]
@@ -1107,17 +1145,21 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseTxReceiptQuery>().await?;
@@ -1129,7 +1171,7 @@ impl ServiceBuilder {
         &self,
         received_signature: SimpleSignatureProofWithPublicInputs<F, C, D>,
         tx_hash: WrappedHashOut<F>,
-    ) {
+    ) -> anyhow::Result<()> {
         let payload = RequestSignedDiffSendBody {
             tx_hash,
             received_signature,
@@ -1156,7 +1198,10 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            panic!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp
@@ -1167,8 +1212,10 @@ impl ServiceBuilder {
         if resp.ok {
             println!("send received signature successfully");
         } else {
-            panic!("fail to send received signature");
+            anyhow::bail!("fail to send received signature");
         }
+
+        Ok(())
     }
 
     /// Returns `(raw_merge_witnesses, until_or_latest_block_number)`
@@ -1178,13 +1225,18 @@ impl ServiceBuilder {
         since: Option<u32>,
         until: Option<u32>,
     ) -> anyhow::Result<(Vec<ReceivedAssetProof<F>>, u32)> {
-        let mut query = vec![("user_address", format!("{}", user_address))];
-        if let Some(since) = since {
-            query.push(("since", format!("{}", since)));
-        }
-        if let Some(until) = until {
-            query.push(("until", format!("{}", until)));
-        }
+        let query = RequestAssetReceivedQuery {
+            user_address,
+            since,
+            until,
+        };
+        // let mut query = vec![("user_address", format!("{}", user_address))];
+        // if let Some(since) = since {
+        //     query.push(("since", format!("{}", since)));
+        // }
+        // if let Some(until) = until {
+        //     query.push(("until", format!("{}", until)));
+        // }
 
         let api_path = "/asset/received";
         #[cfg(feature = "verbose")]
@@ -1192,17 +1244,21 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseAssetReceivedQuery>().await?;
@@ -1216,10 +1272,14 @@ impl ServiceBuilder {
         tx_hash: WrappedHashOut<F>,
         taker_address: Address<F>,
     ) -> anyhow::Result<Bytes> {
-        let query = vec![
-            ("tx_hash", tx_hash.to_string()),
-            ("recipient", taker_address.to_string()),
-        ];
+        let query = RequestTxConfirmationWitnessQuery {
+            tx_hash,
+            recipient: taker_address,
+        };
+        // let query = vec![
+        //     ("tx_hash", tx_hash.to_string()),
+        //     ("recipient", taker_address.to_string()),
+        // ];
 
         let api_path = "/tx/confirmation/witness";
         #[cfg(feature = "verbose")]
@@ -1227,17 +1287,21 @@ impl ServiceBuilder {
             println!("request {api_path}");
             Instant::now()
         };
-        let request = Client::new()
+        let resp = Client::new()
             .get(self.aggregator_api_url(api_path))
-            .query(&query);
-        let resp = request.send().await?;
+            .query(&query)
+            .send()
+            .await?;
         #[cfg(feature = "verbose")]
         {
             let end = start.elapsed();
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseTxConfirmationWitnessQuery>().await?;
@@ -1296,12 +1360,57 @@ impl ServiceBuilder {
             println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
         }
         if resp.status() != 200 {
-            anyhow::bail!("{}", resp.text().await.unwrap());
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
         }
 
         let resp = resp.json::<ResponseUserAssetProofBody>().await?;
 
         Ok(resp.proof)
+    }
+
+    pub async fn get_transaction_proof(
+        &self,
+        tx_hash: HashOut<F>,
+        receiver_address: Address<F>,
+    ) -> anyhow::Result<(TxDetailGoldilocks, MerkleProof<F>, BlockHeader<F>, String)> {
+        let query = RequestTransactionProofQuery {
+            tx_hash: tx_hash.into(),
+            receiver_address,
+        };
+        let api_path = "/account/transaction-proof";
+        #[cfg(feature = "verbose")]
+        let start = {
+            println!("request {api_path}");
+            Instant::now()
+        };
+        let resp = Client::new()
+            .get(self.aggregator_api_url(api_path))
+            .query(&query)
+            .send()
+            .await?;
+        #[cfg(feature = "verbose")]
+        {
+            let end = start.elapsed();
+            println!("respond: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        }
+        if resp.status() != 200 {
+            #[cfg(feature = "verbose")]
+            dbg!(&resp);
+            let error_message = resp.text().await?;
+            anyhow::bail!("unexpected response from {api_path}: {error_message}");
+        }
+
+        let ResponseTransactionProofQuery {
+            tx_details,
+            transaction_proof,
+            block_header,
+            witness,
+        } = resp.json::<ResponseTransactionProofQuery>().await?;
+
+        Ok((tx_details, transaction_proof, block_header, witness))
     }
 }
 
