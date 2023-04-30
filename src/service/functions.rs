@@ -269,8 +269,7 @@ pub fn smt_proof_to_merkle_proof(
 
 pub async fn create_transaction_proof(
     service: &ServiceBuilder,
-    network_config: &ContractConfig<'static>,
-    secret_key: String,
+    network_config: Option<ContractConfig<'static>>,
     tx_hash: HashOut<F>,
     receiver_address: Address<F>,
 ) -> anyhow::Result<Bytes> {
@@ -278,31 +277,6 @@ pub async fn create_transaction_proof(
         .get_transaction_proof(tx_hash, receiver_address)
         .await
         .unwrap();
-
-    // update_transactions_digest(
-    //     &network_config,
-    //     secret_key.clone(),
-    //     block_header.clone(),
-    //     Bytes::from_str(&signature[2..]).unwrap(),
-    // )
-    // .await;
-
-    // let witness = calc_asset_inclusion_proof(
-    //     &network_config,
-    //     secret_key.clone(),
-    //     H256::from_str(&tx_details.nonce.to_string()[2..])
-    //         .unwrap()
-    //         .into(),
-    //     tx_details
-    //         .inclusion_witness
-    //         .siblings
-    //         .iter()
-    //         .map(|v| H256::from_str(&v.to_string()[2..]).unwrap().into())
-    //         .collect::<Vec<_>>(),
-    //     transaction_proof.clone(),
-    //     block_header.clone(),
-    // )
-    // .await;
 
     // NOTICE: When exiting, only one type of token can be transferred at a time.
     if tx_details.assets.len() != 1 {
@@ -323,16 +297,13 @@ pub async fn create_transaction_proof(
     #[cfg(feature = "verbose")]
     dbg!(recipient);
     let witness = Bytes::from_str(&witness[2..]).unwrap();
-    let ok = verify_asset_inclusion_proof(
-        network_config,
-        secret_key,
-        vec![asset],
-        recipient,
-        witness.clone(),
-    )
-    .await;
-    if !ok {
-        anyhow::bail!("invalid witness");
+    if let Some(network_config) = network_config {
+        let ok =
+            verify_asset_inclusion_proof(&network_config, vec![asset], recipient, witness.clone())
+                .await;
+        if !ok {
+            anyhow::bail!("invalid witness");
+        }
     }
 
     Ok(witness)

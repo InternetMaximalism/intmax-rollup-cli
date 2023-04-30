@@ -280,19 +280,6 @@ pub async fn calc_asset_inclusion_proof(
     diff_tree_inclusion_proof: MerkleProof<GoldilocksField>,
     block_header: BlockHeader<GoldilocksField>,
 ) -> Bytes {
-    // let provider = Provider::<Http>::try_from(network_config.rpc_url)
-    //     .unwrap()
-    //     .interval(Duration::from_millis(10u64));
-    // let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
-    // let my_account = secret_key_to_address(&signer_key);
-    // let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
-    // let client = SignerMiddleware::new(provider, wallet);
-    // let client = Arc::new(client);
-
-    // let verifier_contract_address = network_config.verifier_contract_address;
-    // let verifier_contract_address: H160 = verifier_contract_address.parse().unwrap();
-    // let contract = VerifierContract::new(verifier_contract_address, client);
-
     let diff_tree_inclusion_proof = verifier_contract::MerkleProof {
         index: diff_tree_inclusion_proof.index.into(),
         value: H256::from_str(&diff_tree_inclusion_proof.value.to_string()[2..])
@@ -360,7 +347,6 @@ pub async fn calc_asset_inclusion_proof(
 
 pub async fn verify_asset_inclusion_proof(
     network_config: &ContractConfig<'static>,
-    secret_key: String,
     assets: Vec<verifier_contract::Asset>,
     recipient: H256,
     witness: Bytes,
@@ -368,7 +354,8 @@ pub async fn verify_asset_inclusion_proof(
     let provider = Provider::<Http>::try_from(network_config.rpc_url)
         .unwrap()
         .interval(Duration::from_millis(10u64));
-    let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    let rng = rand::thread_rng();
+    let signer_key = SigningKey::random(rng);
     let my_account = secret_key_to_address(&signer_key);
     let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
     let client = SignerMiddleware::new(provider, wallet);

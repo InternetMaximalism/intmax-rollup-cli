@@ -163,7 +163,7 @@ enum AccountCommand {
         receiver_address: String,
         /// choose "scroll" (Scroll Alpha)
         #[structopt(long = "network", short = "n")]
-        network_name: String,
+        network_name: Option<String>,
     },
 }
 
@@ -771,9 +771,12 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     }
                 }
             },
-            AccountCommand::PossessionProof { user_address, .. } => {
-                let user_address = parse_address(&wallet, &nickname_table, user_address)?;
-                service.get_possession_proof(user_address).await.unwrap();
+            AccountCommand::PossessionProof { .. } => {
+                anyhow::bail!("This is a upcoming feature.");
+
+                // let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+                // let proof = service.get_possession_proof(user_address).await?;
+                // dbg!(proof);
             }
             AccountCommand::TransactionProof {
                 tx_hash,
@@ -798,27 +801,26 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     anyhow::bail!("unregistered nickname: recipient");
                 };
 
-                let network_name: NetworkName =
-                    network_name.parse().context("invalid network name")?;
-                #[cfg(not(feature = "enable-polygon-zkevm"))]
-                if network_name == NetworkName::PolygonZkEvmTest {
-                    anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
-                }
+                let network_name = if let Some(network_name) = network_name {
+                    let network_name: NetworkName =
+                        network_name.parse().context("invalid network name")?;
+                    #[cfg(not(feature = "enable-polygon-zkevm"))]
+                    if network_name == NetworkName::PolygonZkEvmTest {
+                        anyhow::bail!("Polygon ZKEVM testnet cannot be selected now");
+                    }
 
-                let network_config = get_network_config(network_name);
-                let secret_key =
-                    std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
+                    Some(get_network_config(network_name))
+                } else {
+                    None
+                };
 
                 let tx_hash =
                     WrappedHashOut::from_str(&tx_hash).expect("tx hash is invalid: {tx_hash}");
-                create_transaction_proof(
-                    &service,
-                    &network_config,
-                    secret_key,
-                    *tx_hash,
-                    receiver_address,
-                )
-                .await?;
+                let witness =
+                    create_transaction_proof(&service, network_name, *tx_hash, receiver_address)
+                        .await?;
+
+                println!("witness: {witness}");
             }
         },
         SubCommand::Transaction { tx_command } => {
@@ -1202,8 +1204,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
 
                 let witness = create_transaction_proof(
                     &service,
-                    &network_config,
-                    secret_key.clone(),
+                    Some(network_config.clone()),
                     *tx_hash,
                     output_asset.receiver_address,
                 )
@@ -1540,8 +1541,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
 
                 let witness = create_transaction_proof(
                     &service,
-                    &network_config,
-                    secret_key.clone(),
+                    Some(network_config.clone()),
                     *tx_hash,
                     output_asset.receiver_address,
                 )
