@@ -152,7 +152,9 @@ enum AccountCommand {
     },
     /// [upcoming features] Output the possession proof of your assets.
     #[structopt(name = "possession-proof")]
-    PossessionProof { user_address: Option<String> },
+    PossessionProof {
+        // user_address: Option<String>
+    },
     #[structopt(name = "transaction-proof")]
     TransactionProof {
         // #[structopt(long, short = "u")]
