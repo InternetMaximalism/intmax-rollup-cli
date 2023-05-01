@@ -31,7 +31,7 @@ pub fn read_distribution_from_csv(
             continue;
         }
 
-        let data = separator.split(&row).into_iter().collect::<Vec<_>>();
+        let data = separator.split(&row).collect::<Vec<_>>();
         if data.len() < 5 {
             anyhow::bail!(
                 "Columns must be arranged in the following order from left to right: Token Address, Recipient, Fungibility, Token ID, Amount. See {CSV_EXAMPLE_LINK} for more information."
