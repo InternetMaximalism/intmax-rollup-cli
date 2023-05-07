@@ -23,18 +23,8 @@ async function main() {
 
   const offerId = await simpleAuction.offerId();
 
-  const offer = await offerManager.getOffer(offerId);
-  const [
-    maker,
-    makerIntmaxAddress,
-    makerAssetId,
-    makerAmount,
-    taker,
-    takerIntmaxAddress,
-    takerTokenAddress,
-    takerAmount,
-    activated,
-  ] = offer;
+  const offer = await offerManager.offers(offerId);
+  const { takerIntmaxAddress } = offer;
 
   console.log("".padEnd(64, "="));
   console.log(

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.17;
 
-import "@intmax/interoperability-contracts/contracts/OfferManager.sol";
+import "@intmax/interoperability-contracts/contracts/OfferManagerV2.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
 contract SimpleAuction is Context {
-    OfferManagerInterface _offerManagerInterface;
+    OfferManagerV2Interface _offerManagerInterface;
     uint256 public offerId;
     uint256 public closingTime;
     bool public done;
@@ -14,15 +14,18 @@ contract SimpleAuction is Context {
     uint256 public largestBidAmount;
     mapping(address => uint256) public withdrawableAmount;
 
+    event TokenWithdrawn(address indexed claimer, uint256 amount);
+
     constructor(
         address offerManagerInterface,
         bytes32 sellerIntmax,
         uint256 sellerAssetId,
         uint256 sellerAmount,
         uint256 auctionPeriodSec,
-        uint256 minBidAmount
+        uint256 minBidAmount,
+        bytes memory witness
     ) {
-        _offerManagerInterface = OfferManagerInterface(offerManagerInterface);
+        _offerManagerInterface = OfferManagerV2Interface(offerManagerInterface);
 
         offerId = _offerManagerInterface.register(
             sellerIntmax,
@@ -31,7 +34,8 @@ contract SimpleAuction is Context {
             address(this),
             sellerIntmax, // non-zero
             address(0), // ETH
-            minBidAmount
+            minBidAmount,
+            witness
         );
 
         closingTime = block.timestamp + auctionPeriodSec;
@@ -80,10 +84,16 @@ contract SimpleAuction is Context {
             bool success = _offerManagerInterface.deactivate(offerId);
             require(success, "fail to deactivate offer");
         } else {
-            // NOTE: Send ETH to OfferManager, but it is refunded to this contract.
-            bool success = _offerManagerInterface.activate{
-                value: largestBidAmount
-            }(offerId);
+            withdrawableAmount[beneficiary] += largestBidAmount;
+
+            // NOTE: This contract sends ETH to OfferManager when activated, but it is refunded to this contract.
+            // So this contract doesn't have to send largestBidAmount to OfferManager.
+            uint256 minBidAmount = _offerManagerInterface
+                .offers(offerId)
+                .takerAmount;
+            bool success = _offerManagerInterface.activate{value: minBidAmount}(
+                offerId
+            );
             require(success, "fail to activate offer");
         }
     }
@@ -96,7 +106,11 @@ contract SimpleAuction is Context {
 
         if (withdrawnAmount != 0) {
             withdrawableAmount[_msgSender()] = 0;
-            payable(_msgSender()).transfer(withdrawnAmount);
+            (bool success, ) = payable(_msgSender()).call{
+                value: withdrawnAmount
+            }("");
+            require(success, "fail to withdraw");
+            emit TokenWithdrawn(_msgSender(), withdrawnAmount);
         }
     }
 }

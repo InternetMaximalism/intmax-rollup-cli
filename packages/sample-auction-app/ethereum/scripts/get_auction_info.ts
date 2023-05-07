@@ -19,7 +19,7 @@ async function main() {
   const offerId = await simpleAuction.offerId();
   console.log("offerId:", offerId.toString());
 
-  const offer = await offerManager.getOffer(offerId);
+  const offer = await offerManager.offers(offerId);
   console.log(
     "sellerIntmaxAddress:",
     decodeIntmaxAddress(offer.makerIntmaxAddress)
