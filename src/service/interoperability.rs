@@ -188,7 +188,15 @@ pub async fn register_transfer<F: RichField>(
     };
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
-    println!("transaction hash is {:?}", tx_hash);
+    if let Some(explorer_url) = network_config.explorer_url {
+        println!("transaction is {}{:?}", explorer_url, tx_hash);
+    } else {
+        println!(
+            "transaction hash is {:?} (Network: {})",
+            tx_hash, network_config.rpc_url
+        );
+    }
+
     let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end register()");
 
