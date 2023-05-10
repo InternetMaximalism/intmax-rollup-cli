@@ -587,6 +587,7 @@ dependencies = [
  "encode_unicode",
  "lazy_static",
  "libc",
+ "unicode-width",
  "windows-sys 0.42.0",
 ]
 
@@ -816,6 +817,18 @@ checksum = "c9dd058f8b65922819fabb4a41e7d1964e56344042c26efbccd465202c23fa0c"
 dependencies = [
  "console 0.14.1",
  "lazy_static",
+ "tempfile",
+ "zeroize",
+]
+
+[[package]]
+name = "dialoguer"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59c6f2989294b9a498d3ad5491a79c6deb604617378e1cdc4bfc1c1361fe2f87"
+dependencies = [
+ "console 0.15.5",
+ "shell-words",
  "tempfile",
  "zeroize",
 ]
@@ -1888,6 +1901,7 @@ dependencies = [
  "anyhow",
  "ctrlc",
  "curl",
+ "dialoguer 0.10.4",
  "dirs",
  "dotenv",
  "hex",
@@ -3311,6 +3325,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3491,7 +3511,7 @@ dependencies = [
  "cfg-if",
  "clap 3.2.23",
  "console 0.14.1",
- "dialoguer",
+ "dialoguer 0.8.0",
  "fs2",
  "hex",
  "home",

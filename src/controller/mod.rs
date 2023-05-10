@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
+use dialoguer::Confirm;
 use intmax_interoperability_plugin::ethers::{
     prelude::k256::ecdsa::SigningKey,
     types::{H160, U256},
@@ -502,11 +503,15 @@ pub async fn invoke_command() -> anyhow::Result<()> {
     } = sub_command
     {
         if !assume_yes {
-            let response = get_input(
-                "This operation cannot be undone. Do you really want to reset the wallet? [y/N]",
-            );
-            if response.to_lowercase() != "y" {
-                println!("Wallet was not reset");
+            let response = Confirm::new()
+                .with_prompt(
+                    "This operation cannot be undone. Do you really want to reset the wallet?",
+                )
+                .interact()
+                .unwrap();
+
+            if !response {
+                eprintln!("Wallet was not reset");
 
                 return Ok(());
             }
