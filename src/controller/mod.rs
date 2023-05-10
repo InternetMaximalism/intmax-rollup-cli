@@ -28,12 +28,13 @@ use structopt::StructOpt;
 use crate::{
     service::{
         builder::*,
-        ethereum::gwei_to_wei,
+        ethereum::{get_network_config, gwei_to_wei},
         functions::{bulk_mint, create_transaction_proof, merge, parse_address, transfer},
         interoperability::{
-            activate_offer, get_network_config, get_offer, lock_offer, register_transfer,
-            unlock_offer, MakerTransferInfo, NetworkName, TakerTransferInfo,
+            activate_offer, get_offer, get_token_metadata, is_token_allowed, lock_offer,
+            register_transfer, unlock_offer, MakerTransferInfo, NetworkName, TakerTransferInfo,
         },
+        prompt::select_payment_method,
         read_distribution_from_csv,
     },
     utils::{
@@ -314,6 +315,9 @@ enum InteroperabilityCommand {
         /// maker amount must be a positive integer less than 2^56
         #[structopt(long)]
         maker_amount: Option<u64>,
+        /// taker token address (0x0000000000000000000000000000000000000000 if ETH)
+        #[structopt(long)]
+        taker_token: Option<String>,
         /// taker amount must be a positive integer less than 2^256 (example: --taker-amount 100)
         #[structopt(long)]
         taker_amount: String,
@@ -356,6 +360,9 @@ enum InteroperabilityCommand {
         /// maker amount must be a positive integer less than 2^56
         #[structopt(long)]
         maker_amount: Option<u64>,
+        /// taker token address (0x0000000000000000000000000000000000000000 if ETH)
+        #[structopt(long)]
+        taker_token: Option<String>,
         /// taker amount must be a positive integer less than 2^256 (example: --taker-amount 100)
         #[structopt(long)]
         taker_amount: String,
@@ -1070,6 +1077,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 contract_address,
                 token_id: variable_index,
                 maker_amount,
+                taker_token: payment_token_address,
                 taker_amount,
                 is_nft,
                 network_name,
@@ -1160,6 +1168,36 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     anyhow::bail!("you cannot omit --amount attribute without --nft flag");
                 };
 
+                let payment_token_address =
+                    if let Some(payment_token_address) = payment_token_address {
+                        let payment_token_address = if let Some(stripped_payment_token_address) =
+                            payment_token_address.strip_prefix("0x")
+                        {
+                            stripped_payment_token_address.to_string()
+                        } else {
+                            payment_token_address
+                        };
+
+                        Some(H160::from_str(&payment_token_address).unwrap())
+                    } else {
+                        None
+                    };
+
+                let payment_token_metadata =
+                    if let Some(payment_token_address) = payment_token_address {
+                        let is_allowed =
+                            is_token_allowed(&network_config, payment_token_address, true).await?;
+                        if !is_allowed {
+                            anyhow::bail!("it is not possible to make an offer for that token");
+                        }
+
+                        get_token_metadata(&network_config, payment_token_address).await?
+                    } else {
+                        select_payment_method(&network_config, false)
+                            .await?
+                            .context("stop operation")?
+                    };
+
                 ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
                 merge(&service, &mut wallet, user_address, 0).await?;
@@ -1235,7 +1273,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 let receiving_transfer_info = TakerTransferInfo {
                     address: H160::default(), // anyone can activate
                     intmax_account: receiver_address,
-                    token_address: H160::default(), // TODO: other allow token address
+                    token_address: payment_token_metadata.address,
                     amount: taker_amount,
                 };
 
@@ -1291,6 +1329,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 token_id: variable_index,
                 receiver,
                 maker_amount,
+                taker_token: payment_token_address,
                 taker_amount,
                 is_nft,
                 network_name,
@@ -1391,6 +1430,37 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     anyhow::bail!("you cannot omit --amount attribute without --nft flag");
                 };
 
+                let payment_token_address =
+                    if let Some(payment_token_address) = payment_token_address {
+                        let payment_token_address = if let Some(stripped_payment_token_address) =
+                            payment_token_address.strip_prefix("0x")
+                        {
+                            stripped_payment_token_address.to_string()
+                        } else {
+                            payment_token_address
+                        };
+
+                        Some(H160::from_str(&payment_token_address).unwrap())
+                    } else {
+                        None
+                    };
+
+                // Ensure that it is possible to make an offer for that token.
+                let payment_token_metadata =
+                    if let Some(payment_token_address) = payment_token_address {
+                        let is_allowed =
+                            is_token_allowed(&network_config, payment_token_address, true).await?;
+                        if !is_allowed {
+                            anyhow::bail!("it is not possible to make an offer for that token");
+                        }
+
+                        get_token_metadata(&network_config, payment_token_address).await?
+                    } else {
+                        select_payment_method(&network_config, true)
+                            .await?
+                            .context("stop operation")?
+                    };
+
                 ctrlc::set_handler(|| {}).expect("Error setting Ctrl-C handler");
 
                 let signer_key =
@@ -1406,7 +1476,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 let sending_transfer_info = TakerTransferInfo {
                     address: my_account,
                     intmax_account: user_address,
-                    token_address: H160::default(),
+                    token_address: payment_token_metadata.address,
                     amount: taker_amount,
                 };
                 let receiving_transfer_info = MakerTransferInfo {
@@ -1459,15 +1529,14 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 let secret_key =
                     std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
 
-                let offer =
-                    get_offer(&network_config, secret_key.clone(), offer_id.into(), true).await;
+                let offer = get_offer(&network_config, offer_id.into(), true).await;
 
                 if offer.is_none() {
                     anyhow::bail!("this offer is not registered");
                 }
 
                 let offer = offer.unwrap();
-                if offer.activated {
+                if offer.is_activated {
                     println!("this offer is already unlocked");
                     return anyhow::Ok(());
                 }
@@ -1516,7 +1585,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 );
 
                 let maker_address = {
-                    let mut tmp = offer.maker_intmax;
+                    let mut tmp = offer.maker_intmax_address;
                     tmp.reverse();
 
                     Address::<F>::from_hash_out(*WrappedHashOut::from_bytes(&tmp))
@@ -1525,7 +1594,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     assert_eq!(maker_address, user_address);
                 }
                 let taker_address = {
-                    let mut tmp = offer.taker_intmax;
+                    let mut tmp = offer.taker_intmax_address;
                     tmp.reverse();
 
                     Address::<F>::from_hash_out(*WrappedHashOut::from_bytes(&tmp))
@@ -1589,16 +1658,8 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 is_reverse_offer,
             } => {
                 let network_config = get_network_config(network_name.parse()?);
-                let secret_key =
-                    std::env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set in .env file");
 
-                let offer = get_offer(
-                    &network_config,
-                    secret_key.clone(),
-                    offer_id.into(),
-                    is_reverse_offer,
-                )
-                .await;
+                let offer = get_offer(&network_config, offer_id.into(), is_reverse_offer).await;
 
                 if let Some(offer) = offer {
                     let mut maker_asset_id = [0u8; 32];
@@ -1606,7 +1667,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     let maker_token_kind = TokenKind::<F>::from_bytes(&maker_asset_id);
                     println!(
                         "Status       | {}",
-                        if offer.activated {
+                        if offer.is_activated {
                             "ACTIVATED"
                         } else {
                             "NOT ACTIVATED"
@@ -1618,7 +1679,10 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         network_name,
                         hex::encode(offer.maker.to_fixed_bytes())
                     );
-                    println!("  intmax     | 0x{}", hex::encode(offer.maker_intmax));
+                    println!(
+                        "  intmax     | 0x{}",
+                        hex::encode(offer.maker_intmax_address)
+                    );
                     println!("  Asset      |");
                     println!("    Address  | {}", maker_token_kind.contract_address);
                     println!("    Token ID | {}", maker_token_kind.variable_index);
@@ -1629,7 +1693,10 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         network_name,
                         hex::encode(offer.taker.to_fixed_bytes())
                     );
-                    println!("  intmax     | 0x{}", hex::encode(offer.taker_intmax));
+                    println!(
+                        "  intmax     | 0x{}",
+                        hex::encode(offer.taker_intmax_address)
+                    );
                     println!("  Asset      |");
                     println!(
                         "    Address  | 0x{}",

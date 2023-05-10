@@ -11,7 +11,7 @@ dialoguer = "0.10"
 dirs = "4.0"
 dotenv = "0.15"
 hex = "0.4"
-intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "2da1412" }
+intmax-rollup-interface = { git = "https://github.com/InternetMaximalism/intmax-rollup-interface", rev = "a6730ff" }
 intmax-interoperability-plugin = { path = "./packages/intmax-interoperability-plugin" }
 num-bigint = "0.4"
 regex = "1"

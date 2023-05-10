@@ -149,7 +149,7 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-amount 1000000000000000 -u bob
+intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-token 0x0000000000000000000000000000000000000000 --taker-amount 1000000000000000 -u bob
 ```
 
 Instead of sending 10 tokens of your own issue to the account created here,
@@ -222,14 +222,14 @@ Once you have deposited tokens into your account,
 you can create an offer by using the following command:
 
 ```sh
-intmax io lock --network scroll --maker-amount 1 --receiver <receiver-scroll-address> --receiver-address dave --taker-amount 1000000000000000 -u carol
+intmax io lock --network scroll --maker-amount 1 --receiver <receiver-scroll-address> --receiver-address dave --taker-token 0x0000000000000000000000000000000000000000 --taker-amount 1000000000000000 -u carol
 ```
 
 For example,
 
 ```sh
 # Before executing, make sure that the address in the `--receiver` field is the one you own.
-intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-amount 1000000000000000 -u carol
+intmax io lock --network scroll --maker-amount 1 --receiver 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --receiver-address dave --taker-token 0x0000000000000000000000000000000000000000 --taker-amount 1000000000000000 -u carol
 ```
 
 In this command, the `--receiver` field should contain the recipient's address on Scroll,
