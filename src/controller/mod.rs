@@ -1217,10 +1217,6 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     "transfer amount is too much"
                 );
 
-                if variable_index != 0.into() {
-                    anyhow::bail!("token ID must be 0");
-                }
-
                 let temporary_receiver_address = match network_name {
                     NetworkName::ScrollAlpha => Address(F::from_canonical_u64(1)),
                     NetworkName::PolygonZkEvmTest => Address(F::from_canonical_u64(2)),
@@ -1663,7 +1659,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
 
                 if let Some(offer) = offer {
                     let mut maker_asset_id = [0u8; 32];
-                    offer.maker_asset_id.to_big_endian(&mut maker_asset_id);
+                    offer.maker_asset_id.to_little_endian(&mut maker_asset_id);
                     let maker_token_kind = TokenKind::<F>::from_bytes(&maker_asset_id);
                     println!(
                         "Status       | {}",
