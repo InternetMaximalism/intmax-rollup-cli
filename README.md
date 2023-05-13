@@ -152,9 +152,9 @@ you can create an offer by using the following command:
 intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-token 0x0000000000000000000000000000000000000000 --taker-amount 1000000000000000 -u bob
 ```
 
-Instead of sending 10 tokens of your own issue to the account created here,
+Instead of sending 1 tokens of your own issue to the account created above,
 make an offer requesting 0.001 ETH (= 10^15 wei) on the Scroll alpha testnet.
-The `--receiver-address` field in this command should contain the recipient's address as it appears on your screen.
+If `--taker-token` field is omitted, you will be prompted which token to use.
 After executing this command, you will see a message that displays the offer ID.
 
 ```txt
