@@ -1,8 +1,12 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use intmax_interoperability_plugin::{
-    contracts::offer_manager::OfferManagerContractWrapper,
     contracts::{
+        erc20_interface::Erc20Interface,
+        offer_manager::OfferManagerContractWrapper,
+        offer_manager_base::{
+            Offer, OfferManagerBaseContract, TokenAllowListContract, TokenAllowListContractWrapper,
+        },
         offer_manager_reverse::OfferManagerReverseContractWrapper,
         verifier::{verifier_contract, VerifierContract},
     },
@@ -11,13 +15,13 @@ use intmax_interoperability_plugin::{
         core::types::U256,
         prelude::{builders::ContractCall, k256::ecdsa::SigningKey, SignerMiddleware},
         providers::{Http, Provider},
-        signers::LocalWallet,
+        signers::{LocalWallet, Signer},
         types::{Bytes, TransactionReceipt, H160, H256},
         utils::secret_key_to_address,
     },
 };
 use intmax_rollup_interface::{
-    constants::{ContractConfig, POLYGON_ZKEVM_TEST_NETWORK_CONFIG, SCROLL_ALPHA_NETWORK_CONFIG},
+    constants::ContractConfig,
     intmax_zkp_core::{
         merkle_tree::tree::MerkleProof,
         plonky2::{
@@ -56,24 +60,20 @@ impl std::str::FromStr for NetworkName {
             "SCROLL_ALPHA" => Self::ScrollAlpha,
             "scroll" => Self::ScrollAlpha,
             "scroll-alpha" => Self::ScrollAlpha,
+            "scrollalpha" => Self::ScrollAlpha,
 
             // PolygonZkEvmTest
             "POLYGON_ZK_EVM_TEST" => Self::PolygonZkEvmTest,
             "polygon" => Self::PolygonZkEvmTest,
             "polygon-zk-evm" => Self::PolygonZkEvmTest,
+            "polygonzkevm" => Self::PolygonZkEvmTest,
+            "polygonzkevmtest" => Self::PolygonZkEvmTest,
 
             // Error
             _ => anyhow::bail!(format!("network name {s} was not found")),
         };
 
         Ok(result)
-    }
-}
-
-pub fn get_network_config(network_name: NetworkName) -> ContractConfig<'static> {
-    match network_name {
-        NetworkName::ScrollAlpha => SCROLL_ALPHA_NETWORK_CONFIG,
-        NetworkName::PolygonZkEvmTest => POLYGON_ZKEVM_TEST_NETWORK_CONFIG,
     }
 }
 
@@ -137,6 +137,14 @@ impl<F: RichField> TakerTransferInfo<F> {
     }
 }
 
+pub fn display_tx_hash(network_config: &ContractConfig<'static>, tx_hash: H256) -> String {
+    if let Some(explorer_url) = network_config.explorer_url {
+        format!("{}{:?}", explorer_url, tx_hash)
+    } else {
+        format!("{:?} (RPC: {})", tx_hash, network_config.rpc_url)
+    }
+}
+
 pub async fn register_transfer<F: RichField>(
     network_config: &ContractConfig<'static>,
     secret_key: String,
@@ -188,7 +196,11 @@ pub async fn register_transfer<F: RichField>(
     };
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
-    println!("transaction hash is {:?}", tx_hash);
+    println!(
+        "transaction hash is {}",
+        display_tx_hash(network_config, tx_hash)
+    );
+
     let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end register()");
 
@@ -224,7 +236,7 @@ pub async fn activate_offer(
         .offer_manager_contract_address
         .parse()
         .unwrap();
-    let contract = OfferManagerContractWrapper::new(offer_manager_contract_address, client);
+    let contract = OfferManagerContractWrapper::new(offer_manager_contract_address, client.clone());
 
     let is_activated: bool = contract.is_activated(offer_id).await.unwrap();
     if is_activated {
@@ -249,14 +261,42 @@ pub async fn activate_offer(
         .unwrap();
     debug_assert_eq!(logs_register.len(), 1);
 
+    let taker_token_address = logs_register[0].taker_token_address;
+    let taker_amount = logs_register[0].taker_amount;
+
     // send token and activate flag on scroll
-    let tx = contract
-        .activate(offer_id)
-        .value(logs_register[0].taker_amount);
+    let tx = contract.activate(offer_id);
+    let tx = if taker_token_address.is_zero() {
+        tx.value(taker_amount)
+    } else {
+        let token_contract = Erc20Interface::new(taker_token_address, client.clone());
+        let approve_tx = token_contract.approve(offer_manager_contract_address, taker_amount);
+
+        println!("start approve()");
+        let pending_tx = approve_tx.send().await.unwrap(); // before confirmation
+        let tx_hash = pending_tx.tx_hash();
+        println!(
+            "transaction hash is {}",
+            display_tx_hash(network_config, tx_hash)
+        );
+        let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
+        println!("end approve()");
+
+        let block_number = tx_receipt
+            .expect("transaction receipt was not found")
+            .block_number
+            .unwrap();
+        println!("transaction mined in block number {block_number}");
+
+        tx
+    };
     println!("start activate()");
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
-    println!("transaction hash is {:?}", tx_hash);
+    println!(
+        "transaction hash is {}",
+        display_tx_hash(network_config, tx_hash)
+    );
     let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end activate()");
 
@@ -373,16 +413,17 @@ pub async fn verify_asset_inclusion_proof(
 
 pub async fn get_offer(
     network_config: &ContractConfig<'static>,
-    secret_key: String,
     offer_id: U256,
     is_reverse_offer: bool,
 ) -> Option<Offer> {
+    let rng = &mut rand::thread_rng();
     let provider = Provider::<Http>::try_from(network_config.rpc_url)
         .unwrap()
         .interval(Duration::from_millis(10u64));
-    let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
-    let my_account = secret_key_to_address(&signer_key);
-    let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    // let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    // let my_account = secret_key_to_address(&signer_key);
+    // let wallet = LocalWallet::new_with_signer(signer_key, my_account, network_config.chain_id);
+    let wallet = LocalWallet::new(rng).with_chain_id(network_config.chain_id);
     let client = SignerMiddleware::new(provider, wallet);
     let client = Arc::new(client);
 
@@ -391,40 +432,41 @@ pub async fn get_offer(
     } else {
         network_config.offer_manager_contract_address
     };
-    let offer_manager_contract_address = offer_manager_contract_address.parse().unwrap();
-    let contract = OfferManagerReverseContractWrapper::new(offer_manager_contract_address, client);
+    let offer_manager_contract_address: H160 = offer_manager_contract_address.parse().unwrap();
+    let contract = OfferManagerBaseContract::new(offer_manager_contract_address, client);
 
     let (
         maker,
-        maker_intmax,
+        maker_intmax_address,
         maker_asset_id,
         maker_amount,
         taker,
-        taker_intmax,
+        taker_intmax_address,
         taker_token_address,
         taker_amount,
-        activated,
+        is_activated,
     ) = contract.get_offer(offer_id).await.unwrap();
-
-    if !is_reverse_offer && maker == H160::default() {
-        return None;
-    }
-
-    if is_reverse_offer && taker == H160::default() {
-        return None;
-    }
-
-    Some(Offer {
+    let offer = Offer {
         maker,
-        maker_intmax,
+        maker_intmax_address,
         maker_asset_id,
         maker_amount,
         taker,
-        taker_intmax,
+        taker_intmax_address,
         taker_token_address,
         taker_amount,
-        activated,
-    })
+        is_activated,
+    };
+
+    if !is_reverse_offer && offer.maker == H160::default() {
+        return None;
+    }
+
+    if is_reverse_offer && offer.taker == H160::default() {
+        return None;
+    }
+
+    Some(offer)
 }
 
 pub async fn lock_offer<F: RichField>(
@@ -453,35 +495,54 @@ pub async fn lock_offer<F: RichField>(
 
     // TODO: register also `receiving_transfer_info`
     let taker_intmax_address = sending_transfer_info.intmax_account();
-    let taker_token_address = H160::default(); // ETH
+    let taker_token_address = sending_transfer_info.token_address();
     let taker_amount = sending_transfer_info.amount();
     let maker = receiving_transfer_info.address();
     // let maker_intmax_address = receiving_transfer_info.intmax_account();
     let maker_asset_id = receiving_transfer_info.asset_id();
     let maker_amount = receiving_transfer_info.amount();
-    // dbg!(
-    //     taker_intmax_address,
-    //     taker_token_address,
-    //     taker_amount,
-    //     maker,
-    //     maker_asset_id,
-    //     maker_amount,
-    // );
-    let tx = contract
-        .register(
-            taker_intmax_address,
-            taker_token_address,
-            taker_amount,
-            maker,
-            maker_asset_id,
-            maker_amount,
-        )
-        .value(sending_transfer_info.amount());
+
+    let tx = contract.register(
+        taker_intmax_address,
+        taker_token_address,
+        taker_amount,
+        maker,
+        maker_asset_id,
+        maker_amount,
+    );
+    let tx = if taker_token_address.is_zero() {
+        tx.value(sending_transfer_info.amount())
+    } else {
+        let token_contract = Erc20Interface::new(taker_token_address, client.clone());
+        let approve_tx =
+            token_contract.approve(reverse_offer_manager_contract_address, taker_amount);
+
+        println!("start approve()");
+        let pending_tx = approve_tx.send().await.unwrap(); // before confirmation
+        let tx_hash = pending_tx.tx_hash();
+        println!(
+            "transaction hash is {}",
+            display_tx_hash(network_config, tx_hash)
+        );
+        let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
+        println!("end approve()");
+
+        let block_number = tx_receipt
+            .expect("transaction receipt was not found")
+            .block_number
+            .unwrap();
+        println!("transaction mined in block number {block_number}");
+
+        tx
+    };
 
     println!("start register()");
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
-    println!("transaction hash is {:?}", tx_hash);
+    println!(
+        "transaction hash is {}",
+        display_tx_hash(network_config, tx_hash)
+    );
     let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end register()");
 
@@ -520,13 +581,13 @@ pub async fn unlock_offer(
     let contract =
         OfferManagerReverseContractWrapper::new(reverse_offer_manager_contract_address, client);
 
-    let offer = get_offer(network_config, secret_key, offer_id, true).await;
+    let offer = get_offer(network_config, offer_id, true).await;
     if offer.is_none() {
         anyhow::bail!("given offer ID is not registered");
     }
 
     let offer = offer.unwrap();
-    if offer.activated {
+    if offer.is_activated {
         println!("given offer ID is already unlocked");
         return Ok(true);
     }
@@ -543,7 +604,10 @@ pub async fn unlock_offer(
     println!("start activate()");
     let pending_tx = tx.send().await.unwrap(); // before confirmation
     let tx_hash = pending_tx.tx_hash();
-    println!("transaction hash is {:?}", tx_hash);
+    println!(
+        "transaction hash is {}",
+        display_tx_hash(network_config, tx_hash)
+    );
     let tx_receipt: Option<TransactionReceipt> = pending_tx.await.unwrap();
     println!("end activate()");
 
@@ -559,17 +623,102 @@ pub async fn unlock_offer(
     Ok(is_unlocked)
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Offer {
-    pub maker: H160,
-    pub maker_intmax: [u8; 32],
-    pub maker_asset_id: U256,
-    pub maker_amount: U256,
-    pub taker: H160,
-    pub taker_intmax: [u8; 32],
-    pub taker_token_address: H160,
-    pub taker_amount: U256,
-    pub activated: bool,
+pub async fn is_token_allowed(
+    network_config: &ContractConfig<'static>,
+    token_address: H160,
+    is_reverse_offer: bool,
+) -> anyhow::Result<bool> {
+    let rng = &mut rand::thread_rng();
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    // let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    // let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new(rng).with_chain_id(network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let offer_manager_contract_address = if is_reverse_offer {
+        network_config.reverse_offer_manager_contract_address
+    } else {
+        network_config.offer_manager_contract_address
+    };
+    let offer_manager_contract_address: H160 = offer_manager_contract_address.parse().unwrap();
+    let contract = TokenAllowListContract::new(offer_manager_contract_address, client);
+
+    let allow_list = contract.token_allow_list(token_address).call().await?;
+    Ok(allow_list)
+}
+
+#[derive(Clone, Debug)]
+pub struct TokenMetadata {
+    pub name: String,
+    pub symbol: String,
+    pub decimals: u8,
+    pub address: H160,
+}
+
+pub async fn get_token_metadata(
+    network_config: &ContractConfig<'static>,
+    token_address: H160,
+) -> anyhow::Result<TokenMetadata> {
+    if token_address.is_zero() {
+        return Ok(TokenMetadata {
+            name: "Ethereum".to_string(),
+            symbol: "ETH".to_string(),
+            decimals: 18,
+            address: token_address,
+        });
+    }
+
+    let rng = &mut rand::thread_rng();
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+
+    let wallet = LocalWallet::new(rng).with_chain_id(network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let token_contract = Erc20Interface::new(token_address, client.clone());
+    let token_name = token_contract.name().call().await?;
+    let token_symbol = token_contract.symbol().call().await?;
+    let token_decimals = token_contract.decimals().call().await?;
+
+    Ok(TokenMetadata {
+        name: token_name,
+        symbol: token_symbol,
+        decimals: token_decimals,
+        address: token_address,
+    })
+}
+
+pub async fn get_token_allow_list(
+    network_config: &ContractConfig<'static>,
+    is_reverse_offer: bool,
+) -> anyhow::Result<Vec<H160>> {
+    let rng = &mut rand::thread_rng();
+    let provider = Provider::<Http>::try_from(network_config.rpc_url)
+        .unwrap()
+        .interval(Duration::from_millis(10u64));
+    // let signer_key = SigningKey::from_bytes(&hex::decode(secret_key).unwrap()).unwrap();
+    // let my_account = secret_key_to_address(&signer_key);
+    let wallet = LocalWallet::new(rng).with_chain_id(network_config.chain_id);
+    let client = SignerMiddleware::new(provider, wallet);
+    let client = Arc::new(client);
+
+    let offer_manager_contract_address = if is_reverse_offer {
+        network_config.reverse_offer_manager_contract_address
+    } else {
+        network_config.offer_manager_contract_address
+    };
+    let offer_manager_contract_address: H160 = offer_manager_contract_address.parse().unwrap();
+    let contract =
+        TokenAllowListContractWrapper::new(offer_manager_contract_address, client.clone());
+
+    let allow_list = contract.get_token_allow_list().await?;
+
+    Ok(allow_list)
 }
 
 // #[cfg(test)]

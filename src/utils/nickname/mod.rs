@@ -1,7 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 use intmax_rollup_interface::intmax_zkp_core::{
-    plonky2::field::goldilocks_field::GoldilocksField, zkdsa::account::Address,
+    plonky2::field::goldilocks_field::GoldilocksField,
+    sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut, zkdsa::account::Address,
 };
 use serde::{Deserialize, Serialize};
 
@@ -82,5 +86,78 @@ impl NicknameTable {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ReservedNicknameTable {
+    pub address_to_nickname: HashMap<Address<F>, String>,
+    pub nickname_to_address: BTreeMap<String, Address<F>>,
+}
+
+impl ReservedNicknameTable {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let networks = vec![
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "ethereum",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "goerli",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "scroll",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "scrollalpha",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000002",
+                "polygon",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000002",
+                "polygonzkevm",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000003",
+                "zksync",
+            ),
+            (
+                "0x0000000000000000000000000000000000000000000000000000000000000003",
+                "zksyncalpha",
+            ),
+        ];
+
+        let mut address_to_nickname = HashMap::new();
+        let mut nickname_to_address = BTreeMap::new();
+        for (address, nickname) in networks {
+            let address = Address::from_hash_out(*WrappedHashOut::from_str(address).unwrap());
+            address_to_nickname.insert(address, nickname.to_string());
+            nickname_to_address.insert(nickname.to_string(), address);
+        }
+
+        Self {
+            address_to_nickname,
+            nickname_to_address,
+        }
+    }
+}
+
+/// Returns the address corresponding to the given nickname.
+pub fn nickname_to_address(nickname_table: &NicknameTable, nickname: &str) -> Option<Address<F>> {
+    let reserved_nickname_table = ReservedNicknameTable::new();
+    if let Some(address) = reserved_nickname_table
+        .nickname_to_address
+        .get(nickname)
+        .copied()
+    {
+        Some(address)
+    } else {
+        nickname_table.nickname_to_address.get(nickname).copied()
     }
 }

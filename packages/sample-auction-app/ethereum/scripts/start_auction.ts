@@ -18,6 +18,8 @@ async function main() {
 
   console.log(addressList);
 
+  const witness = process.env.TRANSACTION_WITNESS!;
+
   const offerManagerAddress = addressList[networkName].offerManager;
   console.log(offerManagerAddress);
 
@@ -31,7 +33,7 @@ async function main() {
   const sellerAssetId = encodeIntmaxAddress(
     process.env.SELLER_ASSET_ID || sellerIntmaxAddress
   );
-  const sellerAmount = 10;
+  const sellerAmount = 1;
   // This auction will close in 2 minutes.
   const auctionPeriodSec = 120;
   // The minimal bid amount is 0.0001 ETH.
@@ -44,7 +46,8 @@ async function main() {
     sellerAssetId,
     sellerAmount,
     auctionPeriodSec,
-    minBidAmount
+    minBidAmount,
+    witness
   );
 
   await simpleAuction.deployed();

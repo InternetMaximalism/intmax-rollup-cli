@@ -258,7 +258,7 @@ impl ServiceBuilder {
         };
 
         let transaction = user_tx_proof.public_inputs.clone();
-        println!("transaction hash is {}", transaction.tx_hash);
+        println!("transaction hash is {} (INTMAX)", transaction.tx_hash);
 
         let payload = RequestTxSendBody { user_tx_proof };
         let body = serde_json::to_string(&payload).expect("fail to encode");

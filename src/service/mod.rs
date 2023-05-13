@@ -4,3 +4,4 @@ pub mod builder;
 pub mod ethereum;
 pub mod functions;
 pub mod interoperability;
+pub mod prompt;

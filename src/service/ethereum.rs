@@ -1,6 +1,18 @@
 use intmax_interoperability_plugin::ethers::types::U256;
+use intmax_rollup_interface::constants::{
+    ContractConfig, POLYGON_ZKEVM_TEST_NETWORK_CONFIG, SCROLL_ALPHA_NETWORK_CONFIG,
+};
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+
+use super::interoperability::NetworkName;
+
+pub fn get_network_config(network_name: NetworkName) -> ContractConfig<'static> {
+    match network_name {
+        NetworkName::ScrollAlpha => SCROLL_ALPHA_NETWORK_CONFIG,
+        NetworkName::PolygonZkEvmTest => POLYGON_ZKEVM_TEST_NETWORK_CONFIG,
+    }
+}
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(

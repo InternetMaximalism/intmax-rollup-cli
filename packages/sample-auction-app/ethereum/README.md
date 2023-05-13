@@ -21,14 +21,26 @@ new account added: <buyer-intmax-address>
 the above account appears replaced by buyer
 ```
 
-Please note the address written in `<seller-intmax-address>` and `<buyer-intmax-address>` section.
-The seller issues a "seller" token and transfers it to the zero address.
+The seller issues a "seller" token and transfers it to the address representing scroll.
 
 ```sh
 intmax tx mint --amount 1 -i 0x00
-intmax tx send --amount 1 -i 0x00 --receiver-address 0x0000000000000000
+intmax tx send --amount 1 -i 0x00 --receiver-address scroll
 ```
 
+If you execute the above command, you will get the following response:
+
+```txt
+start proving: user_tx_proof
+prove: 5.477 sec
+transaction hash is <tx-hash> (INTMAX)
+broadcast transaction successfully
+start proving: received_signature
+prove: 0.033 sec
+send received signature successfully
+```
+
+Please note the hash written in `<tx-hash>` section.
 Go to the directory where the sample auction code is located.
 
 ```sh
@@ -45,15 +57,18 @@ npx hardhat compile
 ```
 
 Edit `PRIVATE_KEY` in .env file before executing next commands.
-Replace `<seller-intmax-address>` and `<buyer-intmax-address>` section with the address you have created before running the following commands.
+Replace `<tx-hash>` section with the transaction hash before running the following commands.
 
 ```sh
 npx hardhat --network scrollalpha run ./scripts/load_offer_manager.ts
 # The seller puts a "seller" token up for auction.
-SELLER_INTMAX_ADDRESS=<seller-intmax-address> npx hardhat --network scrollalpha run ./scripts/start_auction.ts
+SELLER_INTMAX_ADDRESS=$(intmax account nickname get seller) \
+TRANSACTION_WITNESS=$(intmax account transaction-proof <tx-hash> scroll) \
+npx hardhat --network scrollalpha run ./scripts/start_auction.ts
 # The buyer bids 0.0002 ETH for seller's prize.
 # The bid must be higher than either the minimum bid set by the seller or the maximum bid so far.
-BUYER_INTMAX_ADDRESS=<buyer-intmax-address> npx hardhat --network scrollalpha run ./scripts/bid.ts
+BUYER_INTMAX_ADDRESS=$(intmax account nickname get buyer) \
+npx hardhat --network scrollalpha run ./scripts/bid.ts
 # See auction information.
 npx hardhat --network scrollalpha run ./scripts/get_auction_info.ts
 # The buyer claim auction prizes.

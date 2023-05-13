@@ -23,24 +23,13 @@ async function main() {
 
   const offerId = await simpleAuction.offerId();
 
-  const offer = await offerManager.getOffer(offerId);
-  const [
-    maker,
-    makerIntmaxAddress,
-    makerAssetId,
-    makerAmount,
-    taker,
-    takerIntmaxAddress,
-    takerTokenAddress,
-    takerAmount,
-    activated,
-  ] = offer;
+  const { takerIntmaxAddress } = await offerManager.offers(offerId);
 
   console.log("".padEnd(64, "="));
   console.log(
-    `If you are the owner of address ${decodeIntmaxAddress(
+    `If you are the owner of the seller address (${decodeIntmaxAddress(
       takerIntmaxAddress
-    )} on intmax, `
+    )}) on intmax, `
   );
   console.log("you can receive auction prizes by the following command:\n");
   console.log(
