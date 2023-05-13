@@ -1,11 +1,12 @@
 use dotenv::dotenv;
-use intmax::controller::invoke_command;
+use intmax::controller::Command;
+use structopt::StructOpt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenv().ok();
 
-    invoke_command().await?;
+    Command::from_args().invoke().await?;
 
     Ok(())
 }

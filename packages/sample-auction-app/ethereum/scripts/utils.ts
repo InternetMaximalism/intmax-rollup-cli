@@ -2,9 +2,9 @@ import fs from "fs";
 import hre from "hardhat";
 
 export const networkName = hre.network.name;
-console.log("networkName:", networkName);
+// console.log("networkName:", networkName);
 export const chainId = hre.network.config.chainId;
-console.log("chainId:", chainId);
+// console.log("chainId:", chainId);
 export const addressListDirName = `${__dirname}/cache`;
 export const addressListFileName = `${addressListDirName}/address.json`;
 

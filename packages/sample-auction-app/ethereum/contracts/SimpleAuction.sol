@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.17;
 
-import "@intmax/interoperability-contracts/contracts/OfferManager.sol";
+import "@intmax/interoperability-contracts/contracts/OfferManagerV2.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
 contract SimpleAuction is Context {
-    OfferManagerInterface _offerManagerInterface;
+    OfferManagerV2Interface _offerManagerInterface;
     uint256 public offerId;
     uint256 public closingTime;
     bool public done;
@@ -20,9 +20,10 @@ contract SimpleAuction is Context {
         uint256 sellerAssetId,
         uint256 sellerAmount,
         uint256 auctionPeriodSec,
-        uint256 minBidAmount
+        uint256 minBidAmount,
+        bytes memory witness
     ) {
-        _offerManagerInterface = OfferManagerInterface(offerManagerInterface);
+        _offerManagerInterface = OfferManagerV2Interface(offerManagerInterface);
 
         offerId = _offerManagerInterface.register(
             sellerIntmax,
@@ -31,7 +32,8 @@ contract SimpleAuction is Context {
             address(this),
             sellerIntmax, // non-zero
             address(0), // ETH
-            minBidAmount
+            minBidAmount,
+            witness
         );
 
         closingTime = block.timestamp + auctionPeriodSec;
@@ -81,8 +83,10 @@ contract SimpleAuction is Context {
             require(success, "fail to deactivate offer");
         } else {
             // NOTE: Send ETH to OfferManager, but it is refunded to this contract.
+            OfferManagerV2Interface.Offer memory offer = _offerManagerInterface
+                .offers(offerId);
             bool success = _offerManagerInterface.activate{
-                value: largestBidAmount
+                value: offer.takerAmount
             }(offerId);
             require(success, "fail to activate offer");
         }

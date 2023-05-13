@@ -60,11 +60,14 @@ impl std::str::FromStr for NetworkName {
             "SCROLL_ALPHA" => Self::ScrollAlpha,
             "scroll" => Self::ScrollAlpha,
             "scroll-alpha" => Self::ScrollAlpha,
+            "scrollalpha" => Self::ScrollAlpha,
 
             // PolygonZkEvmTest
             "POLYGON_ZK_EVM_TEST" => Self::PolygonZkEvmTest,
             "polygon" => Self::PolygonZkEvmTest,
             "polygon-zk-evm" => Self::PolygonZkEvmTest,
+            "polygonzkevm" => Self::PolygonZkEvmTest,
+            "polygonzkevmtest" => Self::PolygonZkEvmTest,
 
             // Error
             _ => anyhow::bail!(format!("network name {s} was not found")),

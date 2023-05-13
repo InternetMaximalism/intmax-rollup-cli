@@ -39,7 +39,7 @@ use crate::{
     },
     utils::{
         key_management::{memory::WalletOnMemory, types::Wallet},
-        nickname::NicknameTable,
+        nickname::{NicknameTable, ReservedNicknameTable},
     },
 };
 
@@ -51,13 +51,13 @@ const DEFAULT_AGGREGATOR_URL: &str = "http://localhost:8080";
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "intmax")]
-struct Cli {
+pub struct Command {
     #[structopt(subcommand)]
     pub sub_command: SubCommand,
 }
 
 #[derive(Debug, StructOpt)]
-enum SubCommand {
+pub enum SubCommand {
     /// configuration commands
     #[structopt(name = "config")]
     Config {
@@ -99,7 +99,7 @@ enum SubCommand {
 }
 
 #[derive(Debug, StructOpt)]
-enum ConfigCommand {
+pub enum ConfigCommand {
     /// Set aggregator to the specified URL. If omitted, the currently set URL are displayed.
     #[structopt(name = "aggregator-url")]
     AggregatorUrl {
@@ -109,7 +109,7 @@ enum ConfigCommand {
 }
 
 #[derive(Debug, StructOpt)]
-enum AccountCommand {
+pub enum AccountCommand {
     /// [danger operation] Initializing your wallet and delete your all accounts and nicknames.
     #[structopt(name = "reset")]
     Reset {
@@ -172,20 +172,23 @@ enum AccountCommand {
 }
 
 #[derive(Debug, StructOpt)]
-enum NicknameCommand {
+pub enum NicknameCommand {
     /// Give your account a nickname.
     #[structopt(name = "set")]
     Set { address: String, nickname: String },
     /// Remove specified nicknames. The assets held in the account are not lost.
     #[structopt(name = "remove")]
     Remove { nicknames: Vec<String> },
+    /// Display specified nickname.
+    #[structopt(name = "get")]
+    Get { nickname: String },
     /// Display nicknames.
     #[structopt(name = "list")]
     List {},
 }
 
 #[derive(Debug, StructOpt)]
-enum TransactionCommand {
+pub enum TransactionCommand {
     /// Mint your token with the same token address as your user address.
     #[structopt(name = "mint")]
     Mint {
@@ -269,7 +272,7 @@ enum TransactionCommand {
 }
 
 #[derive(Debug, StructOpt)]
-enum BlockCommand {
+pub enum BlockCommand {
     /// [advanced command] Trigger to propose a block.
     #[cfg(feature = "advanced")]
     #[structopt(name = "propose")]
@@ -298,7 +301,7 @@ enum BlockCommand {
 
 #[cfg(feature = "interoperability")]
 #[derive(Debug, StructOpt)]
-enum InteroperabilityCommand {
+pub enum InteroperabilityCommand {
     #[structopt(name = "register")]
     Register {
         #[structopt(long, short = "u")]
@@ -402,7 +405,7 @@ enum InteroperabilityCommand {
 
 #[cfg(feature = "bridge")]
 #[derive(Debug, StructOpt)]
-enum BridgeCommand {
+pub enum BridgeCommand {
     /// [upcoming features] Mint your token with the same token address as your user address.
     #[structopt(name = "deposit")]
     Deposit {
@@ -448,17 +451,13 @@ enum BridgeCommand {
     },
 }
 
-pub fn get_input(prompt: &str) -> String {
-    println!("{}", prompt);
-    let mut input = String::new();
-    match std::io::stdin().read_line(&mut input) {
-        Ok(_goes_into_input_above) => {}
-        Err(_no_updates_is_fine) => {}
+impl Command {
+    pub async fn invoke(self) -> anyhow::Result<()> {
+        invoke_command(self).await
     }
-    input.trim().to_string()
 }
 
-pub async fn invoke_command() -> anyhow::Result<()> {
+pub async fn invoke_command(command: Command) -> anyhow::Result<()> {
     let mut intmax_dir = dirs::home_dir().expect("fail to get home directory");
     intmax_dir.push(".intmax");
 
@@ -502,12 +501,10 @@ pub async fn invoke_command() -> anyhow::Result<()> {
     let mut wallet_file_path = wallet_dir_path.clone();
     wallet_file_path.push("wallet");
 
-    let Cli { sub_command } = Cli::from_args();
-
     let password = "password"; // unused
     if let SubCommand::Account {
         account_command: AccountCommand::Reset { assume_yes },
-    } = sub_command
+    } = command.sub_command
     {
         if !assume_yes {
             let response = Confirm::new()
@@ -555,7 +552,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
         }
     };
 
-    if let SubCommand::Config { config_command: _ } = sub_command {
+    if let SubCommand::Config { config_command: _ } = command.sub_command {
         // nothing to do
     } else {
         check_compatibility_with_server(&service).await?;
@@ -573,6 +570,21 @@ pub async fn invoke_command() -> anyhow::Result<()> {
             anyhow::bail!("choose a nickname that is less than or equal to 12 characters");
         }
 
+        let reserved_nickname_table = ReservedNicknameTable::new();
+        if reserved_nickname_table
+            .nickname_to_address
+            .contains_key(&nickname)
+        {
+            anyhow::bail!("given nickname is reserved");
+        }
+
+        if reserved_nickname_table
+            .address_to_nickname
+            .contains_key(&address)
+        {
+            anyhow::bail!("nicknames cannot be given to this address");
+        }
+
         nickname_table.insert(address, nickname)?;
 
         let encoded_nickname_table = serde_json::to_string(&nickname_table).unwrap();
@@ -584,7 +596,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
         Ok(())
     };
 
-    match sub_command {
+    match command.sub_command {
         SubCommand::Config { config_command } => match config_command {
             ConfigCommand::AggregatorUrl { aggregator_url } => {
                 service.set_aggregator_url(aggregator_url).await?;
@@ -779,6 +791,13 @@ pub async fn invoke_command() -> anyhow::Result<()> {
 
                     println!("Done!");
                 }
+                NicknameCommand::Get { nickname } => {
+                    if let Some(address) = nickname_table.nickname_to_address.get(&nickname) {
+                        println!("{address}");
+                    } else {
+                        anyhow::bail!("nickname not found");
+                    }
+                }
                 NicknameCommand::List {} => {
                     for (nickname, address) in nickname_table.nickname_to_address {
                         println!("{nickname} = {address}");
@@ -799,6 +818,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 ..
             } => {
                 // let user_address = parse_address(&wallet, &nickname_table, user_address)?;
+                let reserved_nickname_table = ReservedNicknameTable::new();
                 let receiver_address = if receiver_address.is_empty() {
                     anyhow::bail!("empty recipient");
                 } else if receiver_address.starts_with("0x") {
@@ -807,6 +827,11 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     }
 
                     Address::from_str(&receiver_address)?
+                } else if let Some(receiver_address) = reserved_nickname_table
+                    .nickname_to_address
+                    .get(&receiver_address)
+                {
+                    *receiver_address
                 } else if let Some(receiver_address) =
                     nickname_table.nickname_to_address.get(&receiver_address)
                 {
@@ -834,7 +859,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                     create_transaction_proof(&service, network_name, *tx_hash, receiver_address)
                         .await?;
 
-                println!("witness: {witness}");
+                println!("{witness}");
             }
         },
         SubCommand::Transaction { tx_command } => {
@@ -926,6 +951,7 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 } => {
                     let user_address = parse_address(&wallet, &nickname_table, user_address)?;
 
+                    let reserved_nickname_table = ReservedNicknameTable::new();
                     let receiver_address = if receiver_address.is_empty() {
                         anyhow::bail!("empty recipient");
                     } else if receiver_address.starts_with("0x") {
@@ -934,6 +960,11 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                         }
 
                         Address::from_str(&receiver_address)?
+                    } else if let Some(receiver_address) = reserved_nickname_table
+                        .nickname_to_address
+                        .get(&receiver_address)
+                    {
+                        *receiver_address
                     } else if let Some(receiver_address) =
                         nickname_table.nickname_to_address.get(&receiver_address)
                     {
@@ -1619,34 +1650,9 @@ pub async fn invoke_command() -> anyhow::Result<()> {
                 )
                 .await?;
 
-                // let witness = {
-                //     // XXX
-                //     service
-                //         .get_transaction_confirmation_witness(tx_hash, taker_address)
-                //         .await?
-
-                //     // let eth_wallet = LocalWallet::new_with_signer(
-                //     //     signer_key,
-                //     //     my_account,
-                //     //     network_config.chain_id,
-                //     // );
-                //     // let signature = eth_wallet
-                //     //     .sign_message(Bytes::from(offer.taker_intmax))
-                //     //     .await?;
-                //     // signature
-                //     //     .verify(offer.taker_intmax, my_account)
-                //     //     .expect("fail to verify signature");
-                //     // signature.to_vec().into()
-                // };
-                // // dbg!(&witness);
-
                 let offer_id: U256 = offer_id.into();
                 let _is_unlocked =
                     unlock_offer(&network_config, secret_key, offer_id, witness).await?;
-
-                // if !_is_unlocked {
-                //     println!("WARNING: The activation was succeeded, but it has not reflect yet.");
-                // }
             }
             InteroperabilityCommand::View {
                 offer_id,
