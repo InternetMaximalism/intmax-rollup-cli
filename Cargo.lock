@@ -1928,6 +1928,8 @@ dependencies = [
  "hex",
  "hex-literal",
  "open-fastrlp",
+ "plonky2 0.1.3",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",
@@ -1954,7 +1956,7 @@ dependencies = [
  "anyhow",
  "hex",
  "num",
- "plonky2",
+ "plonky2 0.1.0",
  "rand",
  "serde",
  "serde_json",
@@ -2669,8 +2671,48 @@ dependencies = [
  "log",
  "maybe_rayon",
  "num",
- "plonky2_field",
- "plonky2_util",
+ "plonky2_field 0.1.0 (git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c)",
+ "plonky2_util 0.1.0 (git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c)",
+ "rand",
+ "serde",
+ "static_assertions",
+ "unroll",
+]
+
+[[package]]
+name = "plonky2"
+version = "0.1.3"
+source = "git+https://github.com/mir-protocol/plonky2?rev=beefc91#beefc91d73d9c0211f65f7e12ce6403f37d8c336"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "getrandom",
+ "hashbrown",
+ "itertools",
+ "keccak-hash",
+ "log",
+ "num",
+ "plonky2_field 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "plonky2_maybe_rayon",
+ "plonky2_util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "static_assertions",
+ "unroll",
+]
+
+[[package]]
+name = "plonky2_field"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef0b0cfed734e8aec93ee0b49e3067a27111c355b9263fb1418bfe4c80656d12"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "num",
+ "plonky2_util 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "serde",
  "static_assertions",
@@ -2685,12 +2727,27 @@ dependencies = [
  "anyhow",
  "itertools",
  "num",
- "plonky2_util",
+ "plonky2_util 0.1.0 (git+https://github.com/InternetMaximalism/plonky2?rev=f99ed9c)",
  "rand",
  "serde",
  "static_assertions",
  "unroll",
 ]
+
+[[package]]
+name = "plonky2_maybe_rayon"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "655cdcdb13c260cdb42b29b55247f2f66479d14342b6be3dc688efc54d3e24c4"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
+name = "plonky2_util"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a7f1a85a8cb948af5e47da488bd78c6d18d3d8cb25b490676f3b9f68bc5b5c8"
 
 [[package]]
 name = "plonky2_util"
