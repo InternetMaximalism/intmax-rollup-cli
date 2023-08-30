@@ -1,3 +1,15 @@
+<div align="center">
+  
+  ![74763454](https://github.com/pucedoteth/intmax-rollup-cli/assets/119044801/2140fab8-a17b-4ae1-a95a-e8b464209e86)
+    <h1>intmax</h1>
+    <strong>The first stateless zkRollup</strong>
+</div>
+<br>
+
+[![Twitter Follow](https://img.shields.io/twitter/follow/iintmaxIO?style=social)](https://twitter.com/intmaxIO)
+[![Discord](https://img.shields.io/discord/984015101017346058?color=%235865F2&label=Discord&logo=discord&logoColor=%23fff)](https://discord.com/invite/N7kYGUPDEE)
+[![Website Status](https://img.shields.io/website?url=https%3A%2F%2Fintmax.io)](https://intmax.io)
+
 # intmax rollup CLI
 
 ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commit data to L1 Network.
