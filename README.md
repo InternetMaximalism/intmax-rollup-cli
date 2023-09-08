@@ -1,5 +1,5 @@
 <div align="center">
-  
+
   ![74763454](https://github.com/pucedoteth/intmax-rollup-cli/assets/119044801/2140fab8-a17b-4ae1-a95a-e8b464209e86)
     <h1>intmax</h1>
     <strong>The first stateless zkRollup</strong>
@@ -40,7 +40,7 @@ cargo run --release --bin intmax config aggregator-url https://alpha.testnet.int
 
 ```sh
 alias intmax="$(pwd)/target/release/intmax"
-intmax -V # intmax 2.2.0-alpha
+intmax -V # intmax 2.2.1-alpha
 ```
 
 ## Update

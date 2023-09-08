@@ -89,6 +89,7 @@ pub async fn merge(
 
         wallet.backup()?;
 
+        service.resolve_server_health_issue().await.unwrap();
         service.trigger_propose_block().await.unwrap();
         service.trigger_approve_block().await.unwrap();
     }
@@ -147,6 +148,7 @@ pub async fn transfer(
         tx_hash
     };
 
+    service.resolve_server_health_issue().await.unwrap();
     service.trigger_propose_block().await.unwrap();
 
     {
@@ -225,6 +227,7 @@ pub async fn bulk_mint(
 
         service.deposit_assets(user_address, deposit_list).await?;
 
+        service.resolve_server_health_issue().await.unwrap();
         service.trigger_propose_block().await.unwrap();
         service.trigger_approve_block().await.unwrap();
     }

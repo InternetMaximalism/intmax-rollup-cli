@@ -635,6 +635,7 @@ pub async fn invoke_command(command: Command) -> anyhow::Result<()> {
                     println!("the above account appears replaced by {nickname}");
                 }
 
+                service.resolve_server_health_issue().await.unwrap();
                 service.trigger_propose_block().await.unwrap();
                 service.trigger_approve_block().await.unwrap();
             }
@@ -918,6 +919,7 @@ pub async fn invoke_command(command: Command) -> anyhow::Result<()> {
                         .deposit_assets(user_address, vec![deposit_info])
                         .await?;
 
+                    service.resolve_server_health_issue().await.unwrap();
                     service.trigger_propose_block().await.unwrap();
                     service.trigger_approve_block().await.unwrap();
                 }
@@ -1093,7 +1095,16 @@ pub async fn invoke_command(command: Command) -> anyhow::Result<()> {
             }
             #[cfg(feature = "advanced")]
             BlockCommand::Approve {} => {
-                service.trigger_approve_block().await?;
+                match service.trigger_approve_block().await {
+                    Ok(_) => {}
+                    Err(error) => {
+                        if error.to_string().contains("unexpected response from /block/approve: Validation error: proposal blocks were not found") {
+                            println!("No proposal blocks were found");
+                        } else {
+                            anyhow::bail!(error);
+                        }
+                    }
+                };
             }
             #[cfg(feature = "advanced")]
             BlockCommand::Verify { block_number } => {
@@ -1346,6 +1357,7 @@ pub async fn invoke_command(command: Command) -> anyhow::Result<()> {
                 }
 
                 // reflect to deposit tree
+                service.resolve_server_health_issue().await.unwrap();
                 service.trigger_propose_block().await.unwrap();
                 service.trigger_approve_block().await.unwrap();
             }
