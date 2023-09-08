@@ -401,6 +401,26 @@ impl ServiceBuilder {
         Ok(resp)
     }
 
+    pub async fn resolve_server_health_issue(&self) -> anyhow::Result<()> {
+        // If an error occurs in this section, there is a high likelihood that the server is down.
+        self.check_health().await?;
+
+        match self.trigger_approve_block().await {
+            Ok(_) => {}
+            Err(error) => {
+                // Approve proposal blocks when they are stuck in an unapproved state.
+                if !error
+                    .to_string()
+                    .contains("Validation error: proposal blocks were not found")
+                {
+                    anyhow::bail!(error);
+                }
+            }
+        };
+
+        Ok(())
+    }
+
     pub async fn sync_sent_transaction<
         D: NodeData<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>> + Clone,
         R: RootData<WrappedHashOut<F>> + Clone,
