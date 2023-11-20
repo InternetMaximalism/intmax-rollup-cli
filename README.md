@@ -76,7 +76,7 @@ intmax account add --nickname bob
 
 ### Mint your token
 
-Mint your token. The token address is the same with your address and the token id can be selected from 0x00 to 0xff.
+Mint your token. The token address is the same as your address and the token id can be selected from 0x00 to 0xff.
 
 ```sh
 intmax tx mint --amount 10 -i 0x00
@@ -108,7 +108,7 @@ intmax tx bulk-mint -f ./tests/airdrop/example.csv
 
 ### Bulk-transfer
 
-You can transfer owned tokens according to the contents of the file. You can send several tokens together in one transaciton.
+You can transfer owned tokens according to the contents of the file. You can send several tokens together in one transaction.
 The number of this aggregation is limited to 8 tokens in the testnet, and will be set to maximum 1024 in the mainnet.
 
 ```sh
@@ -164,7 +164,7 @@ you can create an offer by using the following command:
 intmax io register --network scroll --maker-amount 1 --receiver-address carol --taker-token 0x0000000000000000000000000000000000000000 --taker-amount 1000000000000000 -u bob
 ```
 
-Instead of sending 1 tokens of your own issue to the account created above,
+Instead of sending 1 token of your own issue to the account created above,
 make an offer requesting 0.001 ETH (= 10^15 wei) on the Scroll alpha testnet.
 If `--taker-token` field is omitted, you will be prompted which token to use.
 After executing this command, you will see a message that displays the offer ID.
