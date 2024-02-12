@@ -12,7 +12,7 @@
 
 # intmax rollup CLI
 
-ATTENTION: The Intmax testnet is still a pre-alpha version, so we will not commit data to L1 Network.
+ATTENTION: With the update of the project, this repository will be archived soon. Support and maintenance for this repository will be discontinued.
 
 ## Setup
 
